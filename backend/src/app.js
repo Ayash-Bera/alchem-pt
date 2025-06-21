@@ -209,22 +209,25 @@ async function initializeApp() {
 
         // Start server
         const PORT = process.env.PORT || 5000;
-        server.listen(PORT, () => {
+        server.listen(PORT, '0.0.0.0', () => {
             logger.info(`🚀 Alchemyst Platform API running on port ${PORT}`);
             logger.info(`📊 Health check available at http://localhost:${PORT}/api/health`);
             logger.info(`🔌 Socket.io ready for real-time connections`);
 
-            // Emit server ready event
-            io.emit('server_ready', {
-                status: 'ready',
-                port: PORT,
-                timestamp: new Date(),
-                services: {
-                    database: 'connected',
-                    rabbitmq: 'connected',
-                    agenda: 'initialized'
-                }
-            });
+            // Also log external access info
+            logger.info(`🌐 External access: http://35.209.5.151:${PORT}`);
+        });
+
+        // Emit server ready event
+        io.emit('server_ready', {
+            status: 'ready',
+            port: PORT,
+            timestamp: new Date(),
+            services: {
+                database: 'connected',
+                rabbitmq: 'connected',
+                agenda: 'initialized'
+            }
         });
 
         // Set up periodic health broadcasts
