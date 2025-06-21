@@ -10,16 +10,20 @@ const connectDatabase = async () => {
             url: process.env.MONGODB_URL?.replace(/:[^:@]*@/, ':***@') // Hide password in logs
         });
 
-        const mongoUrl = process.env.MONGODB_URL || 'mongodb://agendauser:agenda123@localhost:27017/alchemyst_platform';
+        const mongoUrl = process.env.MONGODB_URL || 'mongodb://agendauser:agenda123@10.128.0.2:27017/alchemyst_platform?replicaSet=alchemyst-rs';
 
+        // Updated options for modern Mongoose/MongoDB versions
         const options = {
-            useNewUrlParser: true,
-            useUnifiedTopology: true,
-            maxPoolSize: 10, // Maintain up to 10 socket connections
-            serverSelectionTimeoutMS: 5000, // Keep trying to send operations for 5 seconds
-            socketTimeoutMS: 45000, // Close sockets after 45 seconds of inactivity
-            bufferMaxEntries: 0, // Disable mongoose buffering
-            bufferCommands: false, // Disable mongoose buffering
+            // Remove deprecated options that are causing the error
+            maxPoolSize: 10, // Replaces maxPoolSize
+            serverSelectionTimeoutMS: 5000, // Keep this
+            socketTimeoutMS: 45000, // Keep this
+
+            // These are the problematic deprecated options - REMOVED:
+            // bufferMaxEntries: 0, 
+            // bufferCommands: false,
+            // useNewUrlParser: true,    // Default in Mongoose 6+
+            // useUnifiedTopology: true, // Default in Mongoose 6+
         };
 
         // Connect to MongoDB
@@ -66,26 +70,60 @@ const createJobMetricsCollection = async () => {
             logger.info('Created job_metrics collection');
         }
 
-        // Create indexes for better performance
+        // Create indexes for better performance with proper error handling
         const jobMetricsCollection = db.collection('job_metrics');
 
-        await jobMetricsCollection.createIndexes([
-            { key: { job_id: 1 }, unique: true },
-            { key: { job_type: 1 } },
-            { key: { status: 1 } },
-            { key: { started_at: 1 } },
-            { key: { completed_at: 1 } },
-            { key: { job_type: 1, status: 1 } },
-            { key: { started_at: 1, status: 1 } }
-        ]);
+        // Get existing indexes to avoid conflicts
+        const existingIndexes = await jobMetricsCollection.indexes();
+        const existingIndexNames = existingIndexes.map(idx => idx.name);
 
-        logger.info('Job metrics indexes created');
+        // Helper function to create index safely
+        const createIndexSafely = async (indexSpec, options) => {
+            try {
+                await jobMetricsCollection.createIndex(indexSpec, options);
+                logger.info(`Created index: ${options.name || 'unnamed'}`);
+            } catch (error) {
+                if (error.message.includes('existing index')) {
+                    logger.warn(`Index already exists: ${options.name || 'unnamed'}, skipping...`);
+                } else {
+                    logger.error(`Failed to create index ${options.name}:`, error.message);
+                }
+            }
+        };
+
+        // Create indexes with unique names to avoid conflicts
+        const indexesToCreate = [
+            { spec: { job_id: 1 }, options: { unique: true, name: "job_id_unique_idx" } },
+            { spec: { job_type: 1 }, options: { name: "job_type_idx" } },
+            { spec: { status: 1 }, options: { name: "status_idx" } },
+            { spec: { started_at: 1 }, options: { name: "started_at_idx" } },
+            { spec: { completed_at: 1 }, options: { name: "completed_at_idx" } },
+            { spec: { job_type: 1, status: 1 }, options: { name: "job_type_status_idx" } },
+            { spec: { started_at: 1, status: 1 }, options: { name: "started_at_status_idx" } }
+        ];
+
+        // Drop conflicting index if it exists
+        if (existingIndexNames.includes('job_id_1')) {
+            try {
+                await jobMetricsCollection.dropIndex('job_id_1');
+                logger.info('Dropped conflicting job_id_1 index');
+            } catch (error) {
+                logger.warn('Could not drop job_id_1 index:', error.message);
+            }
+        }
+
+        // Create all indexes
+        for (const { spec, options } of indexesToCreate) {
+            await createIndexSafely(spec, options);
+        }
+
+        logger.info('Job metrics indexes created/verified');
     } catch (error) {
         logger.error('Error creating job metrics collection:', error);
-        throw error;
+        // Don't throw the error - let the app continue without perfect indexes
+        logger.warn('Continuing without all indexes - some queries may be slower');
     }
 };
-
 const getDatabase = () => {
     if (!connection) {
         throw new Error('Database not initialized. Call connectDatabase() first.');
