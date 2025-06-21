@@ -1,20 +1,19 @@
+// backend/src/config/agenda.js
 const Agenda = require('agenda');
-const { getPool } = require('./database');
+const { getDatabase } = require('./database');
 const logger = require('../utils/logger');
 
 let agenda = null;
 
 const initializeAgenda = async () => {
     try {
-        // Initialize Agenda with PostgreSQL
+        // Get MongoDB connection
+        const db = getDatabase();
+
+        // Initialize Agenda with MongoDB
         agenda = new Agenda({
-            db: {
-                address: process.env.DATABASE_URL,
-                collection: 'agenda_jobs',
-                options: {
-                    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
-                }
-            },
+            mongo: db,
+            collection: 'agenda_jobs',
             processEvery: '10 seconds', // How often to check for jobs
             maxConcurrency: 10, // Maximum number of jobs to run concurrently
             defaultConcurrency: 5, // Default concurrency for job types
@@ -30,7 +29,7 @@ const initializeAgenda = async () => {
 
         // Start the agenda
         await agenda.start();
-        logger.info('AgendaJS initialized and started successfully');
+        logger.info('AgendaJS initialized and started successfully with MongoDB');
 
         return agenda;
     } catch (error) {
@@ -54,13 +53,14 @@ const setupEventListeners = () => {
     });
 
     agenda.on('complete', (job) => {
+        const runTime = job.attrs.lastFinishedAt - job.attrs.lastRunAt;
         logger.info(`Job ${job.attrs.name} completed:`, {
             jobId: job.attrs._id,
-            runTime: job.attrs.lastFinishedAt - job.attrs.lastRunAt
+            runTime
         });
         updateJobMetrics(job.attrs._id, 'completed', {
             completed_at: new Date(),
-            duration_ms: job.attrs.lastFinishedAt - job.attrs.lastRunAt
+            duration_ms: runTime
         });
     });
 
@@ -209,15 +209,16 @@ const listJobs = async (query = {}, limit = 50, skip = 0) => {
     }
 };
 
-// Database helper functions for job metrics
+// Database helper functions for job metrics using MongoDB
 const createJobMetrics = async (jobId, jobType, jobData) => {
     try {
-        const pool = getPool();
-        await pool.query(
-            `INSERT INTO job_metrics (job_id, job_type, status, metadata) 
-             VALUES ($1, $2, $3, $4)`,
-            [jobId, jobType, 'created', JSON.stringify(jobData)]
-        );
+        const { insertJobMetric } = require('./database');
+        await insertJobMetric({
+            job_id: jobId,
+            job_type: jobType,
+            status: 'created',
+            metadata: jobData
+        });
     } catch (error) {
         logger.error('Error creating job metrics:', error);
     }
@@ -225,17 +226,11 @@ const createJobMetrics = async (jobId, jobType, jobData) => {
 
 const updateJobMetrics = async (jobId, status, updates = {}) => {
     try {
-        const pool = getPool();
-        const setClause = Object.keys(updates).map((key, index) => `${key} = $${index + 3}`).join(', ');
-        const values = [status, jobId, ...Object.values(updates)];
-
-        let query = `UPDATE job_metrics SET status = $1`;
-        if (setClause) {
-            query += `, ${setClause}`;
-        }
-        query += ` WHERE job_id = $2`;
-
-        await pool.query(query, values);
+        const { updateJobMetric } = require('./database');
+        await updateJobMetric(jobId, {
+            status,
+            ...updates
+        });
     } catch (error) {
         logger.error('Error updating job metrics:', error);
     }
@@ -255,13 +250,13 @@ const cleanupOldJobs = async (job) => {
         });
 
         // Clean up old metrics
-        const pool = getPool();
-        const result = await pool.query(
-            `DELETE FROM job_metrics WHERE started_at < $1 AND status IN ('completed', 'failed', 'cancelled')`,
-            [threeDaysAgo]
-        );
+        const db = getDatabase();
+        const result = await db.collection('job_metrics').deleteMany({
+            started_at: { $lt: threeDaysAgo },
+            status: { $in: ['completed', 'failed', 'cancelled'] }
+        });
 
-        logger.info(`Cleanup completed: ${numRemoved} jobs removed, ${result.rowCount} metrics cleaned`);
+        logger.info(`Cleanup completed: ${numRemoved} jobs removed, ${result.deletedCount} metrics cleaned`);
     } catch (error) {
         logger.error('Error during cleanup:', error);
         throw error;
@@ -284,8 +279,12 @@ const systemHealthCheck = async (job) => {
 
         logger.info('System health check completed:', healthStatus);
 
-        // Store health metrics if needed
-        // You could add this to a monitoring system or database
+        // Store health metrics in MongoDB
+        const db = getDatabase();
+        await db.collection('health_checks').insertOne({
+            ...healthStatus,
+            timestamp: new Date()
+        });
 
     } catch (error) {
         logger.error('System health check failed:', error);

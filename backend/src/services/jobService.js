@@ -1,6 +1,7 @@
+// backend/src/services/jobService.js
 const { createJob, cancelJob, getJobStatus, listJobs } = require('../config/agenda');
 const { publishMessage, ROUTING_KEYS } = require('../config/rabbitmq');
-const { getPool } = require('../config/database');
+const { getDatabase } = require('../config/database');
 const logger = require('../utils/logger');
 
 class JobService {
@@ -123,7 +124,7 @@ class JobService {
                 return null;
             }
 
-            // Get additional metrics from database
+            // Get additional metrics from MongoDB
             const metrics = await this.getJobMetrics(jobId);
 
             return {
@@ -199,13 +200,9 @@ class JobService {
 
     async getJobMetrics(jobId) {
         try {
-            const pool = getPool();
-            const result = await pool.query(
-                'SELECT * FROM job_metrics WHERE job_id = $1',
-                [jobId]
-            );
-
-            return result.rows.length > 0 ? result.rows[0] : null;
+            const db = getDatabase();
+            const result = await db.collection('job_metrics').findOne({ job_id: jobId });
+            return result;
         } catch (error) {
             logger.error(`Error getting job metrics for ${jobId}:`, error);
             return null;
@@ -214,57 +211,88 @@ class JobService {
 
     async getJobStatistics(timeRange = '24h') {
         try {
-            const pool = getPool();
+            const db = getDatabase();
+            const jobMetrics = db.collection('job_metrics');
 
             // Calculate time filter
-            let timeFilter = '';
+            let timeFilter = {};
+            const now = new Date();
+
             switch (timeRange) {
                 case '1h':
-                    timeFilter = "started_at >= NOW() - INTERVAL '1 hour'";
+                    timeFilter.started_at = { $gte: new Date(now - 60 * 60 * 1000) };
                     break;
                 case '24h':
-                    timeFilter = "started_at >= NOW() - INTERVAL '24 hours'";
+                    timeFilter.started_at = { $gte: new Date(now - 24 * 60 * 60 * 1000) };
                     break;
                 case '7d':
-                    timeFilter = "started_at >= NOW() - INTERVAL '7 days'";
+                    timeFilter.started_at = { $gte: new Date(now - 7 * 24 * 60 * 60 * 1000) };
                     break;
                 default:
-                    timeFilter = "started_at >= NOW() - INTERVAL '24 hours'";
+                    timeFilter.started_at = { $gte: new Date(now - 24 * 60 * 60 * 1000) };
             }
 
             // Get job counts by status
-            const statusResult = await pool.query(`
-                SELECT status, COUNT(*) as count
-                FROM job_metrics
-                WHERE ${timeFilter}
-                GROUP BY status
-            `);
+            const statusResult = await jobMetrics.aggregate([
+                { $match: timeFilter },
+                {
+                    $group: {
+                        _id: '$status',
+                        count: { $sum: 1 }
+                    }
+                },
+                {
+                    $project: {
+                        status: '$_id',
+                        count: 1,
+                        _id: 0
+                    }
+                }
+            ]).toArray();
 
             // Get job counts by type
-            const typeResult = await pool.query(`
-                SELECT job_type, COUNT(*) as count
-                FROM job_metrics
-                WHERE ${timeFilter}
-                GROUP BY job_type
-            `);
+            const typeResult = await jobMetrics.aggregate([
+                { $match: timeFilter },
+                {
+                    $group: {
+                        _id: '$job_type',
+                        count: { $sum: 1 }
+                    }
+                },
+                {
+                    $project: {
+                        job_type: '$_id',
+                        count: 1,
+                        _id: 0
+                    }
+                }
+            ]).toArray();
 
             // Get average processing time
-            const performanceResult = await pool.query(`
-                SELECT 
-                    AVG(duration_ms) as avg_duration,
-                    MIN(duration_ms) as min_duration,
-                    MAX(duration_ms) as max_duration,
-                    SUM(cost_usd) as total_cost,
-                    AVG(cost_usd) as avg_cost
-                FROM job_metrics
-                WHERE ${timeFilter} AND status = 'completed'
-            `);
+            const performanceResult = await jobMetrics.aggregate([
+                {
+                    $match: {
+                        ...timeFilter,
+                        status: 'completed'
+                    }
+                },
+                {
+                    $group: {
+                        _id: null,
+                        avg_duration: { $avg: '$duration_ms' },
+                        min_duration: { $min: '$duration_ms' },
+                        max_duration: { $max: '$duration_ms' },
+                        total_cost: { $sum: '$cost_usd' },
+                        avg_cost: { $avg: '$cost_usd' }
+                    }
+                }
+            ]).toArray();
 
             return {
                 timeRange,
-                statusBreakdown: statusResult.rows,
-                typeBreakdown: typeResult.rows,
-                performance: performanceResult.rows[0] || {}
+                statusBreakdown: statusResult,
+                typeBreakdown: typeResult,
+                performance: performanceResult[0] || {}
             };
         } catch (error) {
             logger.error('Error getting job statistics:', error);

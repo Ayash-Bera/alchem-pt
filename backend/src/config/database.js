@@ -1,157 +1,183 @@
-const { Pool } = require('pg');
+// backend/src/config/database.js
+const mongoose = require('mongoose');
 const logger = require('../utils/logger');
 
-let pool;
+let connection = null;
 
 const connectDatabase = async () => {
     try {
-        logger.info('Connecting to database...', {
-            url: process.env.DATABASE_URL?.replace(/:[^:@]*@/, ':***@') // Hide password in logs
+        logger.info('Connecting to MongoDB...', {
+            url: process.env.MONGODB_URL?.replace(/:[^:@]*@/, ':***@') // Hide password in logs
         });
 
-        // Create connection pool
-        pool = new Pool({
-            connectionString: process.env.DATABASE_URL,
-            ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-            max: 20, // max number of clients in the pool
-            idleTimeoutMillis: 30000, // close idle clients after 30 seconds
-            connectionTimeoutMillis: 10000, // return an error after 10 seconds if connection could not be established
-            acquireTimeoutMillis: 10000, // return an error after 10 seconds if acquire takes too long
+        const mongoUrl = process.env.MONGODB_URL || 'mongodb://agendauser:agenda123@localhost:27017/alchemyst_platform';
+
+        const options = {
+            useNewUrlParser: true,
+            useUnifiedTopology: true,
+            maxPoolSize: 10, // Maintain up to 10 socket connections
+            serverSelectionTimeoutMS: 5000, // Keep trying to send operations for 5 seconds
+            socketTimeoutMS: 45000, // Close sockets after 45 seconds of inactivity
+            bufferMaxEntries: 0, // Disable mongoose buffering
+            bufferCommands: false, // Disable mongoose buffering
+        };
+
+        // Connect to MongoDB
+        connection = await mongoose.connect(mongoUrl, options);
+
+        logger.info('MongoDB connected successfully', {
+            host: connection.connection.host,
+            port: connection.connection.port,
+            database: connection.connection.name
         });
 
-        // Test the connection
-        logger.info('Testing database connection...');
-        const client = await pool.connect();
-        const result = await client.query('SELECT NOW() as current_time, version() as version');
-        client.release();
+        // Create job metrics collection with indexes
+        await createJobMetricsCollection();
 
-        logger.info('Database connected successfully', {
-            currentTime: result.rows[0].current_time,
-            version: result.rows[0].version.split(' ')[0] // Just the version number
-        });
-
-        // Create agenda_jobs table if it doesn't exist
-        await createAgendaTable();
-
-        return pool;
+        return connection;
     } catch (error) {
-        logger.error('Database connection failed:', {
+        logger.error('MongoDB connection failed:', {
             error: error.message,
-            code: error.code,
-            host: error.address,
-            port: error.port
+            code: error.code
         });
 
         // Provide helpful error messages
-        if (error.code === 'ECONNREFUSED') {
-            logger.error('Connection refused - check if PostgreSQL is running and accessible');
-        } else if (error.code === 'ETIMEDOUT') {
-            logger.error('Connection timeout - check network connectivity and firewall settings');
-        } else if (error.code === 'ENOTFOUND') {
-            logger.error('Host not found - check the database host address');
+        if (error.message.includes('ECONNREFUSED')) {
+            logger.error('Connection refused - check if MongoDB is running and accessible');
+        } else if (error.message.includes('authentication failed')) {
+            logger.error('Authentication failed - check username and password');
+        } else if (error.message.includes('ENOTFOUND')) {
+            logger.error('Host not found - check the MongoDB host address');
         }
 
         throw error;
     }
 };
 
-const createAgendaTable = async () => {
+const createJobMetricsCollection = async () => {
     try {
-        const client = await pool.connect();
+        const db = mongoose.connection.db;
 
-        // Create agenda_jobs table for AgendaJS
-        await client.query(`
-            CREATE TABLE IF NOT EXISTS agenda_jobs (
-                _id SERIAL PRIMARY KEY,
-                name VARCHAR(255) NOT NULL,
-                data JSONB,
-                priority INTEGER DEFAULT 0,
-                type VARCHAR(50) DEFAULT 'normal',
-                next_run_at TIMESTAMP,
-                last_modified_by VARCHAR(255),
-                locked_at TIMESTAMP,
-                last_ran_at TIMESTAMP,
-                last_finished_at TIMESTAMP,
-                failed_at TIMESTAMP,
-                repeat_interval VARCHAR(255),
-                repeat_timezone VARCHAR(255),
-                repeat_at VARCHAR(255),
-                disabled BOOLEAN DEFAULT FALSE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        `);
+        // Create job_metrics collection
+        const jobMetricsExists = await db.listCollections({ name: 'job_metrics' }).hasNext();
+
+        if (!jobMetricsExists) {
+            await db.createCollection('job_metrics');
+            logger.info('Created job_metrics collection');
+        }
 
         // Create indexes for better performance
-        await client.query(`
-            CREATE INDEX IF NOT EXISTS idx_agenda_name ON agenda_jobs(name);
-            CREATE INDEX IF NOT EXISTS idx_agenda_next_run ON agenda_jobs(next_run_at);
-            CREATE INDEX IF NOT EXISTS idx_agenda_locked ON agenda_jobs(locked_at);
-            CREATE INDEX IF NOT EXISTS idx_agenda_priority ON agenda_jobs(priority);
-        `);
+        const jobMetricsCollection = db.collection('job_metrics');
 
-        // Create jobs tracking table
-        await client.query(`
-            CREATE TABLE IF NOT EXISTS job_metrics (
-                id SERIAL PRIMARY KEY,
-                job_id VARCHAR(255) NOT NULL,
-                job_type VARCHAR(100) NOT NULL,
-                status VARCHAR(50) NOT NULL,
-                started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                completed_at TIMESTAMP,
-                duration_ms INTEGER,
-                cost_usd DECIMAL(10, 4),
-                api_calls INTEGER DEFAULT 0,
-                tokens_used INTEGER DEFAULT 0,
-                error_message TEXT,
-                metadata JSONB
-            );
-        `);
+        await jobMetricsCollection.createIndexes([
+            { key: { job_id: 1 }, unique: true },
+            { key: { job_type: 1 } },
+            { key: { status: 1 } },
+            { key: { started_at: 1 } },
+            { key: { completed_at: 1 } },
+            { key: { job_type: 1, status: 1 } },
+            { key: { started_at: 1, status: 1 } }
+        ]);
 
-        await client.query(`
-            CREATE INDEX IF NOT EXISTS idx_job_metrics_type ON job_metrics(job_type);
-            CREATE INDEX IF NOT EXISTS idx_job_metrics_status ON job_metrics(status);
-            CREATE INDEX IF NOT EXISTS idx_job_metrics_started ON job_metrics(started_at);
-        `);
-
-        client.release();
-        logger.info('Database tables created/verified successfully');
+        logger.info('Job metrics indexes created');
     } catch (error) {
-        logger.error('Error creating database tables:', error);
+        logger.error('Error creating job metrics collection:', error);
         throw error;
     }
 };
 
-const getPool = () => {
-    if (!pool) {
+const getDatabase = () => {
+    if (!connection) {
         throw new Error('Database not initialized. Call connectDatabase() first.');
     }
-    return pool;
+    return mongoose.connection.db;
 };
 
 const closeDatabase = async () => {
-    if (pool) {
-        await pool.end();
-        logger.info('Database connection closed');
+    if (connection) {
+        await mongoose.connection.close();
+        logger.info('MongoDB connection closed');
     }
 };
 
 // Health check function
 const checkDatabaseHealth = async () => {
     try {
-        const client = await pool.connect();
-        const result = await client.query('SELECT 1 as health_check');
-        client.release();
-        return { healthy: true, timestamp: new Date() };
+        await mongoose.connection.db.admin().ping();
+        return {
+            healthy: true,
+            timestamp: new Date(),
+            database: mongoose.connection.name,
+            host: mongoose.connection.host
+        };
     } catch (error) {
-        logger.error('Database health check failed:', error);
+        logger.error('MongoDB health check failed:', error);
         return { healthy: false, error: error.message, timestamp: new Date() };
+    }
+};
+
+// Job metrics helper functions for backward compatibility
+const insertJobMetric = async (jobData) => {
+    try {
+        const db = getDatabase();
+        const result = await db.collection('job_metrics').insertOne({
+            job_id: jobData.job_id,
+            job_type: jobData.job_type,
+            status: jobData.status,
+            started_at: new Date(),
+            metadata: jobData.metadata || {},
+            created_at: new Date()
+        });
+        return result;
+    } catch (error) {
+        logger.error('Error inserting job metric:', error);
+        throw error;
+    }
+};
+
+const updateJobMetric = async (jobId, updates) => {
+    try {
+        const db = getDatabase();
+        const result = await db.collection('job_metrics').updateOne(
+            { job_id: jobId },
+            {
+                $set: {
+                    ...updates,
+                    updated_at: new Date()
+                }
+            }
+        );
+        return result;
+    } catch (error) {
+        logger.error('Error updating job metric:', error);
+        throw error;
+    }
+};
+
+const getJobMetrics = async (query = {}, options = {}) => {
+    try {
+        const db = getDatabase();
+        const { limit = 50, skip = 0, sort = { started_at: -1 } } = options;
+
+        const cursor = db.collection('job_metrics')
+            .find(query)
+            .sort(sort)
+            .skip(skip)
+            .limit(limit);
+
+        return await cursor.toArray();
+    } catch (error) {
+        logger.error('Error getting job metrics:', error);
+        throw error;
     }
 };
 
 module.exports = {
     connectDatabase,
-    getPool,
+    getDatabase,
     closeDatabase,
-    checkDatabaseHealth
+    checkDatabaseHealth,
+    insertJobMetric,
+    updateJobMetric,
+    getJobMetrics
 };

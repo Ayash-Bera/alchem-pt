@@ -1,4 +1,5 @@
-const { getPool } = require('../config/database');
+// backend/src/utils/costTracker.js
+const { getDatabase } = require('../config/database');
 const logger = require('./logger');
 
 class CostTracker {
@@ -8,12 +9,17 @@ class CostTracker {
 
     async trackJobCost(jobId, jobType, cost, tokens, apiCalls = 1) {
         try {
-            const pool = getPool();
-            await pool.query(
-                `UPDATE job_metrics 
-                 SET cost_usd = $1, tokens_used = $2, api_calls = $3 
-                 WHERE job_id = $4`,
-                [cost, tokens, apiCalls, jobId]
+            const db = getDatabase();
+            const result = await db.collection('job_metrics').updateOne(
+                { job_id: jobId },
+                {
+                    $set: {
+                        cost_usd: cost,
+                        tokens_used: tokens,
+                        api_calls: apiCalls,
+                        updated_at: new Date()
+                    }
+                }
             );
 
             logger.info('Job cost tracked:', { jobId, cost, tokens, apiCalls });
@@ -29,34 +35,45 @@ class CostTracker {
 
     async getTotalCosts(timeRange = '24h') {
         try {
-            const pool = getPool();
-            let timeFilter = '';
+            const db = getDatabase();
+            const jobMetrics = db.collection('job_metrics');
+
+            let timeFilter = {};
+            const now = new Date();
 
             switch (timeRange) {
                 case '1h':
-                    timeFilter = "started_at >= NOW() - INTERVAL '1 hour'";
+                    timeFilter.started_at = { $gte: new Date(now - 60 * 60 * 1000) };
                     break;
                 case '24h':
-                    timeFilter = "started_at >= NOW() - INTERVAL '24 hours'";
+                    timeFilter.started_at = { $gte: new Date(now - 24 * 60 * 60 * 1000) };
                     break;
                 case '7d':
-                    timeFilter = "started_at >= NOW() - INTERVAL '7 days'";
+                    timeFilter.started_at = { $gte: new Date(now - 7 * 24 * 60 * 60 * 1000) };
                     break;
                 default:
-                    timeFilter = "started_at >= NOW() - INTERVAL '24 hours'";
+                    timeFilter.started_at = { $gte: new Date(now - 24 * 60 * 60 * 1000) };
             }
 
-            const result = await pool.query(`
-                SELECT 
-                    SUM(cost_usd) as total_cost,
-                    COUNT(*) as total_jobs,
-                    AVG(cost_usd) as avg_cost,
-                    SUM(tokens_used) as total_tokens
-                FROM job_metrics 
-                WHERE ${timeFilter} AND cost_usd IS NOT NULL
-            `);
+            const result = await jobMetrics.aggregate([
+                {
+                    $match: {
+                        ...timeFilter,
+                        cost_usd: { $exists: true, $ne: null }
+                    }
+                },
+                {
+                    $group: {
+                        _id: null,
+                        total_cost: { $sum: '$cost_usd' },
+                        total_jobs: { $sum: 1 },
+                        avg_cost: { $avg: '$cost_usd' },
+                        total_tokens: { $sum: '$tokens_used' }
+                    }
+                }
+            ]).toArray();
 
-            return result.rows[0] || { total_cost: 0, total_jobs: 0, avg_cost: 0, total_tokens: 0 };
+            return result[0] || { total_cost: 0, total_jobs: 0, avg_cost: 0, total_tokens: 0 };
         } catch (error) {
             logger.error('Error getting total costs:', error);
             return { total_cost: 0, total_jobs: 0, avg_cost: 0, total_tokens: 0 };
@@ -65,37 +82,56 @@ class CostTracker {
 
     async getCostBreakdown(timeRange = '24h') {
         try {
-            const pool = getPool();
-            let timeFilter = '';
+            const db = getDatabase();
+            const jobMetrics = db.collection('job_metrics');
+
+            let timeFilter = {};
+            const now = new Date();
 
             switch (timeRange) {
                 case '1h':
-                    timeFilter = "started_at >= NOW() - INTERVAL '1 hour'";
+                    timeFilter.started_at = { $gte: new Date(now - 60 * 60 * 1000) };
                     break;
                 case '24h':
-                    timeFilter = "started_at >= NOW() - INTERVAL '24 hours'";
+                    timeFilter.started_at = { $gte: new Date(now - 24 * 60 * 60 * 1000) };
                     break;
                 case '7d':
-                    timeFilter = "started_at >= NOW() - INTERVAL '7 days'";
+                    timeFilter.started_at = { $gte: new Date(now - 7 * 24 * 60 * 60 * 1000) };
                     break;
                 default:
-                    timeFilter = "started_at >= NOW() - INTERVAL '24 hours'";
+                    timeFilter.started_at = { $gte: new Date(now - 24 * 60 * 60 * 1000) };
             }
 
-            const result = await pool.query(`
-                SELECT 
-                    job_type,
-                    SUM(cost_usd) as total_cost,
-                    COUNT(*) as job_count,
-                    AVG(cost_usd) as avg_cost,
-                    SUM(tokens_used) as total_tokens
-                FROM job_metrics 
-                WHERE ${timeFilter} AND cost_usd IS NOT NULL
-                GROUP BY job_type
-                ORDER BY total_cost DESC
-            `);
+            const result = await jobMetrics.aggregate([
+                {
+                    $match: {
+                        ...timeFilter,
+                        cost_usd: { $exists: true, $ne: null }
+                    }
+                },
+                {
+                    $group: {
+                        _id: '$job_type',
+                        total_cost: { $sum: '$cost_usd' },
+                        job_count: { $sum: 1 },
+                        avg_cost: { $avg: '$cost_usd' },
+                        total_tokens: { $sum: '$tokens_used' }
+                    }
+                },
+                {
+                    $project: {
+                        job_type: '$_id',
+                        total_cost: 1,
+                        job_count: 1,
+                        avg_cost: 1,
+                        total_tokens: 1,
+                        _id: 0
+                    }
+                },
+                { $sort: { total_cost: -1 } }
+            ]).toArray();
 
-            return result.rows;
+            return result;
         } catch (error) {
             logger.error('Error getting cost breakdown:', error);
             return [];
@@ -106,7 +142,20 @@ class CostTracker {
         logger.warn('HIGH COST ALERT:', { jobId, jobType, cost, threshold: this.costAlertThreshold });
 
         // TODO: Implement alerting mechanism (email, Slack, etc.)
-        // For now, just log the alert
+        // Store alert in MongoDB for now
+        try {
+            const db = getDatabase();
+            await db.collection('cost_alerts').insertOne({
+                job_id: jobId,
+                job_type: jobType,
+                cost: cost,
+                threshold: this.costAlertThreshold,
+                triggered_at: new Date(),
+                resolved: false
+            });
+        } catch (error) {
+            logger.error('Error storing cost alert:', error);
+        }
     }
 
     calculateEstimatedCost(jobType, inputSize) {
@@ -121,6 +170,42 @@ class CostTracker {
         const sizeMultiplier = Math.max(1, inputSize / 1000); // Scale with input size
 
         return baseCost * sizeMultiplier;
+    }
+
+    async getCostAlerts(resolved = false) {
+        try {
+            const db = getDatabase();
+            const alerts = await db.collection('cost_alerts')
+                .find({ resolved })
+                .sort({ triggered_at: -1 })
+                .limit(50)
+                .toArray();
+
+            return alerts;
+        } catch (error) {
+            logger.error('Error getting cost alerts:', error);
+            return [];
+        }
+    }
+
+    async resolveCostAlert(alertId) {
+        try {
+            const db = getDatabase();
+            const result = await db.collection('cost_alerts').updateOne(
+                { _id: alertId },
+                {
+                    $set: {
+                        resolved: true,
+                        resolved_at: new Date()
+                    }
+                }
+            );
+
+            return result.modifiedCount > 0;
+        } catch (error) {
+            logger.error('Error resolving cost alert:', error);
+            return false;
+        }
     }
 }
 

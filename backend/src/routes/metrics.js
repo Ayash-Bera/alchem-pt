@@ -1,5 +1,6 @@
+// backend/src/routes/metrics.js
 const express = require('express');
-const { getPool } = require('../config/database');
+const { getDatabase } = require('../config/database');
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -7,55 +8,58 @@ const router = express.Router();
 // Get concurrency metrics
 router.get('/concurrency', async (req, res) => {
     try {
-        const pool = getPool();
+        const db = getDatabase();
+        const jobMetrics = db.collection('job_metrics');
 
         // Get current running jobs
-        const runningJobs = await pool.query(`
-            SELECT 
-                job_type,
-                COUNT(*) as count
-            FROM job_metrics 
-            WHERE status = 'running'
-            GROUP BY job_type
-        `);
+        const runningJobs = await jobMetrics.aggregate([
+            { $match: { status: 'running' } },
+            { $group: { _id: '$job_type', count: { $sum: 1 } } },
+            { $project: { job_type: '$_id', count: 1, _id: 0 } }
+        ]).toArray();
 
         // Get jobs by status in last hour
-        const statusMetrics = await pool.query(`
-            SELECT 
-                status,
-                COUNT(*) as count
-            FROM job_metrics 
-            WHERE started_at >= NOW() - INTERVAL '1 hour'
-            GROUP BY status
-        `);
+        const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+        const statusMetrics = await jobMetrics.aggregate([
+            { $match: { started_at: { $gte: oneHourAgo } } },
+            { $group: { _id: '$status', count: { $sum: 1 } } },
+            { $project: { status: '$_id', count: 1, _id: 0 } }
+        ]).toArray();
 
-        // Get concurrent job peaks
-        const concurrencyPeaks = await pool.query(`
-            SELECT 
-                DATE_TRUNC('hour', started_at) as hour,
-                MAX(concurrent_count) as peak_concurrency
-            FROM (
-                SELECT 
-                    started_at,
-                    COUNT(*) OVER (
-                        ORDER BY started_at 
-                        RANGE BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING
-                    ) as concurrent_count
-                FROM job_metrics
-                WHERE started_at >= NOW() - INTERVAL '24 hours'
-                  AND status IN ('running', 'completed')
-            ) subq
-            GROUP BY hour
-            ORDER BY hour DESC
-            LIMIT 24
-        `);
+        // Get concurrent job peaks (simplified for MongoDB)
+        const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        const concurrencyPeaks = await jobMetrics.aggregate([
+            {
+                $match: {
+                    started_at: { $gte: twentyFourHoursAgo },
+                    status: { $in: ['running', 'completed'] }
+                }
+            },
+            {
+                $group: {
+                    _id: {
+                        hour: { $dateToString: { format: "%Y-%m-%d-%H", date: "$started_at" } }
+                    },
+                    job_count: { $sum: 1 }
+                }
+            },
+            { $sort: { '_id.hour': -1 } },
+            { $limit: 24 },
+            {
+                $project: {
+                    hour: '$_id.hour',
+                    peak_concurrency: '$job_count',
+                    _id: 0
+                }
+            }
+        ]).toArray();
 
         res.json({
             success: true,
             metrics: {
-                currentlyRunning: runningJobs.rows,
-                statusBreakdown: statusMetrics.rows,
-                concurrencyPeaks: concurrencyPeaks.rows,
+                currentlyRunning: runningJobs,
+                statusBreakdown: statusMetrics,
+                concurrencyPeaks: concurrencyPeaks,
                 timestamp: new Date()
             }
         });
@@ -71,78 +75,143 @@ router.get('/concurrency', async (req, res) => {
 router.get('/costs', async (req, res) => {
     try {
         const { timeRange = '24h' } = req.query;
-        const pool = getPool();
+        const db = getDatabase();
+        const jobMetrics = db.collection('job_metrics');
 
-        let timeFilter = '';
+        let timeFilter = {};
+        const now = new Date();
+
         switch (timeRange) {
             case '1h':
-                timeFilter = "started_at >= NOW() - INTERVAL '1 hour'";
+                timeFilter.started_at = { $gte: new Date(now - 60 * 60 * 1000) };
                 break;
             case '24h':
-                timeFilter = "started_at >= NOW() - INTERVAL '24 hours'";
+                timeFilter.started_at = { $gte: new Date(now - 24 * 60 * 60 * 1000) };
                 break;
             case '7d':
-                timeFilter = "started_at >= NOW() - INTERVAL '7 days'";
+                timeFilter.started_at = { $gte: new Date(now - 7 * 24 * 60 * 60 * 1000) };
                 break;
             case '30d':
-                timeFilter = "started_at >= NOW() - INTERVAL '30 days'";
+                timeFilter.started_at = { $gte: new Date(now - 30 * 24 * 60 * 60 * 1000) };
                 break;
             default:
-                timeFilter = "started_at >= NOW() - INTERVAL '24 hours'";
+                timeFilter.started_at = { $gte: new Date(now - 24 * 60 * 60 * 1000) };
         }
 
         // Total costs by job type
-        const costsByType = await pool.query(`
-            SELECT 
-                job_type,
-                COUNT(*) as job_count,
-                SUM(cost_usd) as total_cost,
-                AVG(cost_usd) as avg_cost,
-                SUM(tokens_used) as total_tokens,
-                SUM(api_calls) as total_api_calls
-            FROM job_metrics 
-            WHERE ${timeFilter} 
-              AND cost_usd IS NOT NULL
-            GROUP BY job_type
-            ORDER BY total_cost DESC
-        `);
+        const costsByType = await jobMetrics.aggregate([
+            {
+                $match: {
+                    ...timeFilter,
+                    cost_usd: { $exists: true, $ne: null }
+                }
+            },
+            {
+                $group: {
+                    _id: '$job_type',
+                    job_count: { $sum: 1 },
+                    total_cost: { $sum: '$cost_usd' },
+                    avg_cost: { $avg: '$cost_usd' },
+                    total_tokens: { $sum: '$tokens_used' },
+                    total_api_calls: { $sum: '$api_calls' }
+                }
+            },
+            {
+                $project: {
+                    job_type: '$_id',
+                    job_count: 1,
+                    total_cost: 1,
+                    avg_cost: 1,
+                    total_tokens: 1,
+                    total_api_calls: 1,
+                    _id: 0
+                }
+            },
+            { $sort: { total_cost: -1 } }
+        ]).toArray();
 
         // Cost over time
-        const costsOverTime = await pool.query(`
-            SELECT 
-                DATE_TRUNC('hour', started_at) as hour,
-                SUM(cost_usd) as hourly_cost,
-                COUNT(*) as job_count
-            FROM job_metrics
-            WHERE ${timeFilter}
-              AND cost_usd IS NOT NULL
-            GROUP BY hour
-            ORDER BY hour DESC
-            LIMIT 24
-        `);
+        const costsOverTime = await jobMetrics.aggregate([
+            {
+                $match: {
+                    ...timeFilter,
+                    cost_usd: { $exists: true, $ne: null }
+                }
+            },
+            {
+                $group: {
+                    _id: {
+                        hour: { $dateToString: { format: "%Y-%m-%d-%H", date: "$started_at" } }
+                    },
+                    hourly_cost: { $sum: '$cost_usd' },
+                    job_count: { $sum: 1 }
+                }
+            },
+            { $sort: { '_id.hour': -1 } },
+            { $limit: 24 },
+            {
+                $project: {
+                    hour: '$_id.hour',
+                    hourly_cost: 1,
+                    job_count: 1,
+                    _id: 0
+                }
+            }
+        ]).toArray();
 
         // Cost efficiency metrics
-        const efficiency = await pool.query(`
-            SELECT 
-                AVG(cost_usd / NULLIF(duration_ms, 0) * 1000) as cost_per_second,
-                AVG(tokens_used / NULLIF(cost_usd, 0)) as tokens_per_dollar,
-                PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY cost_usd) as median_cost,
-                PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY cost_usd) as p95_cost
-            FROM job_metrics
-            WHERE ${timeFilter}
-              AND cost_usd IS NOT NULL
-              AND duration_ms IS NOT NULL
-              AND status = 'completed'
-        `);
+        const efficiency = await jobMetrics.aggregate([
+            {
+                $match: {
+                    ...timeFilter,
+                    cost_usd: { $exists: true, $ne: null },
+                    duration_ms: { $exists: true, $ne: null },
+                    status: 'completed'
+                }
+            },
+            {
+                $group: {
+                    _id: null,
+                    avg_cost_per_second: {
+                        $avg: {
+                            $divide: [
+                                '$cost_usd',
+                                { $divide: ['$duration_ms', 1000] }
+                            ]
+                        }
+                    },
+                    avg_tokens_per_dollar: {
+                        $avg: {
+                            $divide: ['$tokens_used', '$cost_usd']
+                        }
+                    }
+                }
+            }
+        ]).toArray();
+
+        // Calculate percentiles manually (MongoDB doesn't have built-in percentile functions)
+        const allCosts = await jobMetrics.find({
+            ...timeFilter,
+            cost_usd: { $exists: true, $ne: null }
+        }).sort({ cost_usd: 1 }).toArray();
+
+        const median_cost = allCosts.length > 0 ?
+            allCosts[Math.floor(allCosts.length * 0.5)]?.cost_usd : 0;
+        const p95_cost = allCosts.length > 0 ?
+            allCosts[Math.floor(allCosts.length * 0.95)]?.cost_usd : 0;
 
         res.json({
             success: true,
             metrics: {
                 timeRange,
-                costsByType: costsByType.rows,
-                costsOverTime: costsOverTime.rows,
-                efficiency: efficiency.rows[0] || {},
-                totalCost: costsByType.rows.reduce((sum, row) => sum + parseFloat(row.total_cost || 0), 0),
+                costsByType: costsByType,
+                costsOverTime: costsOverTime,
+                efficiency: {
+                    ...efficiency[0],
+                    median_cost,
+                    p95_cost
+                },
+                totalCost: costsByType.reduce((sum, row) => sum + (row.total_cost || 0), 0),
                 timestamp: new Date()
             }
         });
@@ -158,101 +227,179 @@ router.get('/costs', async (req, res) => {
 router.get('/performance', async (req, res) => {
     try {
         const { timeRange = '24h' } = req.query;
-        const pool = getPool();
+        const db = getDatabase();
+        const jobMetrics = db.collection('job_metrics');
 
-        let timeFilter = '';
+        let timeFilter = {};
+        const now = new Date();
+
         switch (timeRange) {
             case '1h':
-                timeFilter = "started_at >= NOW() - INTERVAL '1 hour'";
+                timeFilter.started_at = { $gte: new Date(now - 60 * 60 * 1000) };
                 break;
             case '24h':
-                timeFilter = "started_at >= NOW() - INTERVAL '24 hours'";
+                timeFilter.started_at = { $gte: new Date(now - 24 * 60 * 60 * 1000) };
                 break;
             case '7d':
-                timeFilter = "started_at >= NOW() - INTERVAL '7 days'";
+                timeFilter.started_at = { $gte: new Date(now - 7 * 24 * 60 * 60 * 1000) };
                 break;
             default:
-                timeFilter = "started_at >= NOW() - INTERVAL '24 hours'";
+                timeFilter.started_at = { $gte: new Date(now - 24 * 60 * 60 * 1000) };
         }
 
         // Performance by job type
-        const performanceByType = await pool.query(`
-            SELECT 
-                job_type,
-                COUNT(*) as job_count,
-                AVG(duration_ms) as avg_duration_ms,
-                MIN(duration_ms) as min_duration_ms,
-                MAX(duration_ms) as max_duration_ms,
-                PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY duration_ms) as median_duration_ms,
-                PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration_ms) as p95_duration_ms,
-                COUNT(CASE WHEN status = 'completed' THEN 1 END) as successful_jobs,
-                COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed_jobs,
-                ROUND(
-                    COUNT(CASE WHEN status = 'completed' THEN 1 END) * 100.0 / COUNT(*), 2
-                ) as success_rate
-            FROM job_metrics 
-            WHERE ${timeFilter}
-              AND duration_ms IS NOT NULL
-            GROUP BY job_type
-            ORDER BY avg_duration_ms DESC
-        `);
+        const performanceByType = await jobMetrics.aggregate([
+            {
+                $match: {
+                    ...timeFilter,
+                    duration_ms: { $exists: true, $ne: null }
+                }
+            },
+            {
+                $group: {
+                    _id: '$job_type',
+                    job_count: { $sum: 1 },
+                    avg_duration_ms: { $avg: '$duration_ms' },
+                    min_duration_ms: { $min: '$duration_ms' },
+                    max_duration_ms: { $max: '$duration_ms' },
+                    successful_jobs: {
+                        $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] }
+                    },
+                    failed_jobs: {
+                        $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] }
+                    }
+                }
+            },
+            {
+                $addFields: {
+                    success_rate: {
+                        $multiply: [
+                            { $divide: ['$successful_jobs', '$job_count'] },
+                            100
+                        ]
+                    }
+                }
+            },
+            {
+                $project: {
+                    job_type: '$_id',
+                    job_count: 1,
+                    avg_duration_ms: 1,
+                    min_duration_ms: 1,
+                    max_duration_ms: 1,
+                    successful_jobs: 1,
+                    failed_jobs: 1,
+                    success_rate: { $round: ['$success_rate', 2] },
+                    _id: 0
+                }
+            },
+            { $sort: { avg_duration_ms: -1 } }
+        ]).toArray();
 
         // Throughput over time
-        const throughputOverTime = await pool.query(`
-            SELECT 
-                DATE_TRUNC('hour', completed_at) as hour,
-                COUNT(*) as jobs_completed,
-                AVG(duration_ms) as avg_duration_ms
-            FROM job_metrics
-            WHERE ${timeFilter}
-              AND status = 'completed'
-              AND completed_at IS NOT NULL
-            GROUP BY hour
-            ORDER BY hour DESC
-            LIMIT 24
-        `);
+        const throughputOverTime = await jobMetrics.aggregate([
+            {
+                $match: {
+                    ...timeFilter,
+                    status: 'completed',
+                    completed_at: { $exists: true }
+                }
+            },
+            {
+                $group: {
+                    _id: {
+                        hour: { $dateToString: { format: "%Y-%m-%d-%H", date: "$completed_at" } }
+                    },
+                    jobs_completed: { $sum: 1 },
+                    avg_duration_ms: { $avg: '$duration_ms' }
+                }
+            },
+            { $sort: { '_id.hour': -1 } },
+            { $limit: 24 },
+            {
+                $project: {
+                    hour: '$_id.hour',
+                    jobs_completed: 1,
+                    avg_duration_ms: 1,
+                    _id: 0
+                }
+            }
+        ]).toArray();
 
         // Error rates
-        const errorRates = await pool.query(`
-            SELECT 
-                job_type,
-                COUNT(*) as total_jobs,
-                COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed_jobs,
-                ROUND(
-                    COUNT(CASE WHEN status = 'failed' THEN 1 END) * 100.0 / COUNT(*), 2
-                ) as error_rate,
-                COUNT(CASE WHEN error_message IS NOT NULL THEN 1 END) as jobs_with_errors
-            FROM job_metrics
-            WHERE ${timeFilter}
-            GROUP BY job_type
-            ORDER BY error_rate DESC
-        `);
+        const errorRates = await jobMetrics.aggregate([
+            { $match: timeFilter },
+            {
+                $group: {
+                    _id: '$job_type',
+                    total_jobs: { $sum: 1 },
+                    failed_jobs: {
+                        $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] }
+                    },
+                    jobs_with_errors: {
+                        $sum: { $cond: [{ $ne: ['$error_message', null] }, 1, 0] }
+                    }
+                }
+            },
+            {
+                $addFields: {
+                    error_rate: {
+                        $multiply: [
+                            { $divide: ['$failed_jobs', '$total_jobs'] },
+                            100
+                        ]
+                    }
+                }
+            },
+            {
+                $project: {
+                    job_type: '$_id',
+                    total_jobs: 1,
+                    failed_jobs: 1,
+                    error_rate: { $round: ['$error_rate', 2] },
+                    jobs_with_errors: 1,
+                    _id: 0
+                }
+            },
+            { $sort: { error_rate: -1 } }
+        ]).toArray();
 
-        // Queue performance
-        const queueMetrics = await pool.query(`
-            SELECT 
-                AVG(EXTRACT(EPOCH FROM (completed_at - started_at))) as avg_queue_time_seconds,
-                PERCENTILE_CONT(0.5) WITHIN GROUP (
-                    ORDER BY EXTRACT(EPOCH FROM (completed_at - started_at))
-                ) as median_queue_time_seconds,
-                PERCENTILE_CONT(0.95) WITHIN GROUP (
-                    ORDER BY EXTRACT(EPOCH FROM (completed_at - started_at))
-                ) as p95_queue_time_seconds
-            FROM job_metrics
-            WHERE ${timeFilter}
-              AND status = 'completed'
-              AND started_at IS NOT NULL
-              AND completed_at IS NOT NULL
-        `);
+        // Queue performance (simplified)
+        const queueMetrics = await jobMetrics.aggregate([
+            {
+                $match: {
+                    ...timeFilter,
+                    status: 'completed',
+                    started_at: { $exists: true },
+                    completed_at: { $exists: true }
+                }
+            },
+            {
+                $addFields: {
+                    queue_time_seconds: {
+                        $divide: [
+                            { $subtract: ['$completed_at', '$started_at'] },
+                            1000
+                        ]
+                    }
+                }
+            },
+            {
+                $group: {
+                    _id: null,
+                    avg_queue_time_seconds: { $avg: '$queue_time_seconds' }
+                }
+            }
+        ]).toArray();
 
         res.json({
             success: true,
             metrics: {
                 timeRange,
-                performanceByType: performanceByType.rows,
-                throughputOverTime: throughputOverTime.rows,
-                errorRates: errorRates.rows,
-                queueMetrics: queueMetrics.rows[0] || {},
+                performanceByType: performanceByType,
+                throughputOverTime: throughputOverTime,
+                errorRates: errorRates,
+                queueMetrics: queueMetrics[0] || {},
                 timestamp: new Date()
             }
         });
@@ -294,15 +441,12 @@ router.get('/system', (req, res) => {
 router.get('/jobs/:jobId', async (req, res) => {
     try {
         const { jobId } = req.params;
-        const pool = getPool();
+        const db = getDatabase();
+        const jobMetrics = db.collection('job_metrics');
 
-        const jobMetrics = await pool.query(`
-            SELECT *
-            FROM job_metrics
-            WHERE job_id = $1
-        `, [jobId]);
+        const jobMetric = await jobMetrics.findOne({ job_id: jobId });
 
-        if (jobMetrics.rows.length === 0) {
+        if (!jobMetric) {
             return res.status(404).json({
                 error: 'Job metrics not found'
             });
@@ -310,7 +454,7 @@ router.get('/jobs/:jobId', async (req, res) => {
 
         res.json({
             success: true,
-            metrics: jobMetrics.rows[0]
+            metrics: jobMetric
         });
     } catch (error) {
         logger.error(`Error getting job metrics for ${req.params.jobId}:`, error);
@@ -323,55 +467,104 @@ router.get('/jobs/:jobId', async (req, res) => {
 // Get aggregated dashboard metrics
 router.get('/dashboard', async (req, res) => {
     try {
-        const pool = getPool();
+        const db = getDatabase();
+        const jobMetrics = db.collection('job_metrics');
+        const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
         // Get summary stats for last 24 hours
-        const summary = await pool.query(`
-            SELECT 
-                COUNT(*) as total_jobs,
-                COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_jobs,
-                COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed_jobs,
-                COUNT(CASE WHEN status = 'running' THEN 1 END) as running_jobs,
-                SUM(cost_usd) as total_cost,
-                AVG(duration_ms) as avg_duration_ms,
-                SUM(tokens_used) as total_tokens
-            FROM job_metrics
-            WHERE started_at >= NOW() - INTERVAL '24 hours'
-        `);
+        const summary = await jobMetrics.aggregate([
+            { $match: { started_at: { $gte: twentyFourHoursAgo } } },
+            {
+                $group: {
+                    _id: null,
+                    total_jobs: { $sum: 1 },
+                    completed_jobs: {
+                        $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] }
+                    },
+                    failed_jobs: {
+                        $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] }
+                    },
+                    running_jobs: {
+                        $sum: { $cond: [{ $eq: ['$status', 'running'] }, 1, 0] }
+                    },
+                    total_cost: { $sum: '$cost_usd' },
+                    avg_duration_ms: { $avg: '$duration_ms' },
+                    total_tokens: { $sum: '$tokens_used' }
+                }
+            }
+        ]).toArray();
 
         // Get recent activity (last 10 jobs)
-        const recentActivity = await pool.query(`
-            SELECT 
-                job_id,
-                job_type,
-                status,
-                started_at,
-                completed_at,
-                duration_ms,
-                cost_usd
-            FROM job_metrics
-            ORDER BY started_at DESC
-            LIMIT 10
-        `);
+        const recentActivity = await jobMetrics.find({})
+            .sort({ started_at: -1 })
+            .limit(10)
+            .project({
+                job_id: 1,
+                job_type: 1,
+                status: 1,
+                started_at: 1,
+                completed_at: 1,
+                duration_ms: 1,
+                cost_usd: 1
+            })
+            .toArray();
 
         // Get job type distribution
-        const typeDistribution = await pool.query(`
-            SELECT 
-                job_type,
-                COUNT(*) as count,
-                ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (), 2) as percentage
-            FROM job_metrics
-            WHERE started_at >= NOW() - INTERVAL '24 hours'
-            GROUP BY job_type
-            ORDER BY count DESC
-        `);
+        const typeDistribution = await jobMetrics.aggregate([
+            { $match: { started_at: { $gte: twentyFourHoursAgo } } },
+            {
+                $group: {
+                    _id: '$job_type',
+                    count: { $sum: 1 }
+                }
+            },
+            {
+                $addFields: {
+                    job_type: '$_id'
+                }
+            },
+            {
+                $lookup: {
+                    from: 'job_metrics',
+                    pipeline: [
+                        { $match: { started_at: { $gte: twentyFourHoursAgo } } },
+                        { $count: 'total' }
+                    ],
+                    as: 'total_count'
+                }
+            },
+            {
+                $addFields: {
+                    percentage: {
+                        $round: [
+                            {
+                                $multiply: [
+                                    { $divide: ['$count', { $arrayElemAt: ['$total_count.total', 0] }] },
+                                    100
+                                ]
+                            },
+                            2
+                        ]
+                    }
+                }
+            },
+            {
+                $project: {
+                    job_type: 1,
+                    count: 1,
+                    percentage: 1,
+                    _id: 0
+                }
+            },
+            { $sort: { count: -1 } }
+        ]).toArray();
 
         res.json({
             success: true,
             dashboard: {
-                summary: summary.rows[0] || {},
-                recentActivity: recentActivity.rows,
-                typeDistribution: typeDistribution.rows,
+                summary: summary[0] || {},
+                recentActivity: recentActivity,
+                typeDistribution: typeDistribution,
                 timestamp: new Date()
             }
         });

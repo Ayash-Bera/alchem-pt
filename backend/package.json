@@ -1,7 +1,7 @@
 {
   "name": "alchemyst-backend",
   "version": "1.0.0",
-  "description": "Alchemyst Platform Backend",
+  "description": "Alchemyst Platform Backend with MongoDB",
   "main": "src/app.js",
   "scripts": {
     "start": "node src/app.js",
@@ -14,11 +14,11 @@
     "dotenv": "^16.3.1",
     "socket.io": "^4.7.2",
     "agenda": "^4.3.0",
+    "mongoose": "^8.0.3",
     "amqplib": "^0.10.3",
     "axios": "^1.5.0",
     "express-rate-limit": "^6.10.0",
-    "winston": "^3.10.0",
-    "pg": "^8.11.3"
+    "winston": "^3.10.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
@@ -27,6 +27,7 @@
     "express",
     "rabbitmq",
     "agenda",
+    "mongodb",
     "jobs"
   ],
   "author": "Your Name",
