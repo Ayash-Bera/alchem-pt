@@ -20,41 +20,100 @@ const errorHandler = require('./middleware/errorHandler');
 const logger = require('./utils/logger');
 const socketService = require('./services/socketService');
 
+// Configuration
+const PORT = process.env.PORT || 5000;
+const HOST = '0.0.0.0'; // Critical: bind to all interfaces
+const FRONTEND_URL = process.env.FRONTEND_URL || "http://35.209.5.151:3000";
+
 const app = express();
 const server = createServer(app);
+
+// Enhanced CORS configuration
+const corsOptions = {
+    origin: [
+        FRONTEND_URL,
+        'http://localhost:3000',
+        'http://35.209.5.151:3000',
+        'http://127.0.0.1:3000'
+    ],
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+};
+
 const io = new Server(server, {
-    cors: {
-        origin: process.env.FRONTEND_URL || "http://localhost:3000",
-        methods: ["GET", "POST"]
-    }
+    cors: corsOptions
 });
 
 // Basic middleware
-app.use(cors({
-    origin: process.env.FRONTEND_URL || "http://localhost:3000",
-    credentials: true
-}));
-
+app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// Rate limiting
+// Add security headers
+app.use((req, res, next) => {
+    res.header('X-Content-Type-Options', 'nosniff');
+    res.header('X-Frame-Options', 'DENY');
+    res.header('X-XSS-Protection', '1; mode=block');
+    next();
+});
+
+// Rate limiting with more lenient settings for development
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // limit each IP to 100 requests per windowMs
+    max: 200, // Increased limit for testing
     message: {
         error: 'Too many requests from this IP, please try again later.'
-    }
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
 });
-app.use(limiter);
+app.use('/api', limiter);
 
-// Request logging middleware
+// Enhanced request logging middleware
 app.use((req, res, next) => {
-    logger.info(`${req.method} ${req.path}`, {
-        ip: req.ip,
-        userAgent: req.get('User-Agent')
+    const start = Date.now();
+
+    res.on('finish', () => {
+        const duration = Date.now() - start;
+        logger.info(`${req.method} ${req.path} - ${res.statusCode}`, {
+            ip: req.ip,
+            userAgent: req.get('User-Agent'),
+            duration: `${duration}ms`,
+            contentLength: res.get('Content-Length')
+        });
     });
+
     next();
+});
+
+// Health check route (before other routes)
+app.get('/health', (req, res) => {
+    res.json({
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+        memory: process.memoryUsage(),
+        version: '1.0.0'
+    });
+});
+
+// Basic route for testing (enhanced)
+app.get('/', (req, res) => {
+    res.json({
+        message: 'Alchemyst Platform API',
+        version: '1.0.0',
+        status: 'running',
+        timestamp: new Date().toISOString(),
+        environment: process.env.NODE_ENV || 'development',
+        endpoints: {
+            health: '/health',
+            api: '/api',
+            jobs: '/api/jobs',
+            metrics: '/api/metrics',
+            healthCheck: '/api/health'
+        }
+    });
 });
 
 // Routes
@@ -62,24 +121,13 @@ app.use('/api/jobs', jobRoutes);
 app.use('/api/metrics', metricsRoutes);
 app.use('/api/health', healthRoutes);
 
-// Basic route for testing
-app.get('/', (req, res) => {
+// Test endpoint for debugging
+app.get('/test', (req, res) => {
     res.json({
-        message: 'Alchemyst Platform API',
-        version: '1.0.0',
-        status: 'running',
-        timestamp: new Date().toISOString()
-    });
-});
-
-// Error handling middleware
-app.use(errorHandler);
-
-// 404 handler
-app.use('*', (req, res) => {
-    res.status(404).json({
-        error: 'Route not found',
-        path: req.originalUrl
+        message: 'Test endpoint working',
+        timestamp: new Date(),
+        headers: req.headers,
+        ip: req.ip
     });
 });
 
@@ -135,15 +183,35 @@ io.on('connection', (socket) => {
     });
 });
 
+// Error handling middleware
+app.use(errorHandler);
+
+// 404 handler
+app.use('*', (req, res) => {
+    logger.warn(`404 - Route not found: ${req.originalUrl}`, {
+        method: req.method,
+        ip: req.ip
+    });
+    res.status(404).json({
+        error: 'Route not found',
+        path: req.originalUrl,
+        timestamp: new Date().toISOString()
+    });
+});
+
 // Global error handlers
 process.on('uncaughtException', (error) => {
     logger.error('Uncaught Exception:', error);
-    gracefulShutdown().then(() => process.exit(1));
+    setTimeout(() => {
+        gracefulShutdown().then(() => process.exit(1));
+    }, 1000);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
     logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
-    gracefulShutdown().then(() => process.exit(1));
+    setTimeout(() => {
+        gracefulShutdown().then(() => process.exit(1));
+    }, 1000);
 });
 
 // Graceful shutdown handlers
@@ -159,7 +227,9 @@ process.on('SIGINT', async () => {
 
 const shutdown = async () => {
     try {
-        // Close server
+        logger.info('Starting graceful shutdown...');
+
+        // Stop accepting new connections
         server.close(() => {
             logger.info('HTTP server closed');
         });
@@ -186,49 +256,61 @@ const shutdown = async () => {
 // Initialize services and start server
 async function initializeApp() {
     try {
-        logger.info('Starting Alchemyst Platform...');
+        logger.info('🚀 Starting Alchemyst Platform...');
 
-        // Initialize database connection
-        logger.info('Connecting to database...');
-        await connectDatabase();
-        logger.info('Database connected successfully');
-
-        // Initialize RabbitMQ connection
-        logger.info('Connecting to RabbitMQ...');
-        await connectRabbitMQ();
-        logger.info('RabbitMQ connected successfully');
-
-        // Initialize AgendaJS
-        logger.info('Initializing AgendaJS...');
-        await initializeAgenda();
-        logger.info('AgendaJS initialized successfully');
-
-        // Initialize socket service
-        socketService.initialize(io);
-        logger.info('Socket service initialized');
-
-        // Start server
-        const PORT = process.env.PORT || 5000;
-        server.listen(PORT, '0.0.0.0', () => {
-            logger.info(`🚀 Alchemyst Platform API running on port ${PORT}`);
-            logger.info(`📊 Health check available at http://localhost:${PORT}/api/health`);
-            logger.info(`🔌 Socket.io ready for real-time connections`);
-
-            // Also log external access info
+        // Always start the HTTP server first (even if services fail)
+        server.listen(PORT, HOST, () => {
+            logger.info(`✅ HTTP Server running on ${HOST}:${PORT}`);
+            logger.info(`📊 Health check: http://localhost:${PORT}/health`);
             logger.info(`🌐 External access: http://35.209.5.151:${PORT}`);
+            logger.info(`🔗 Test endpoint: http://35.209.5.151:${PORT}/test`);
         });
+
+        // Initialize socket service early
+        socketService.initialize(io);
+        logger.info('✅ Socket service initialized');
+
+        // Try to initialize other services (but don't fail if they're unavailable)
+        try {
+            logger.info('🔌 Connecting to database...');
+            await connectDatabase();
+            logger.info('✅ Database connected successfully');
+        } catch (error) {
+            logger.error('❌ Database connection failed, continuing without it:', error.message);
+        }
+
+        try {
+            logger.info(' Connecting to RabbitMQ...');
+            await connectRabbitMQ();
+            logger.info('RabbitMQ connected successfully');
+        } catch (error) {
+            logger.error('❌ RabbitMQ connection failed, continuing without it:', error.message);
+        }
+
+        try {
+            logger.info(' Initializing AgendaJS...');
+            await initializeAgenda();
+            logger.info('AgendaJS initialized successfully');
+        } catch (error) {
+            logger.error('❌ AgendaJS initialization failed, continuing without it:', error.message);
+        }
 
         // Emit server ready event
-        io.emit('server_ready', {
-            status: 'ready',
-            port: PORT,
-            timestamp: new Date(),
-            services: {
-                database: 'connected',
-                rabbitmq: 'connected',
-                agenda: 'initialized'
-            }
-        });
+        setTimeout(() => {
+            io.emit('server_ready', {
+                status: 'ready',
+                port: PORT,
+                host: HOST,
+                timestamp: new Date(),
+                services: {
+                    http: 'connected',
+                    websocket: 'connected',
+                    database: 'check logs',
+                    rabbitmq: 'check logs',
+                    agenda: 'check logs'
+                }
+            });
+        }, 1000);
 
         // Set up periodic health broadcasts
         setInterval(() => {
@@ -240,9 +322,16 @@ async function initializeApp() {
             });
         }, 30000); // Every 30 seconds
 
+        logger.info('🎉 Alchemyst Platform initialization completed!');
+
     } catch (error) {
-        logger.error('Failed to initialize app:', error);
-        process.exit(1);
+        logger.error('💥 Failed to initialize app:', error);
+
+        // Still try to start the basic HTTP server
+        server.listen(PORT, HOST, () => {
+            logger.info(`⚠️  Basic HTTP Server running on ${HOST}:${PORT} (degraded mode)`);
+            logger.info(`🔗 Test endpoint: http://35.209.5.151:${PORT}/test`);
+        });
     }
 }
 
