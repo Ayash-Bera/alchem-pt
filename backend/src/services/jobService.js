@@ -36,7 +36,7 @@ class JobService {
 
             // Publish to RabbitMQ for processing
             await publishMessage(ROUTING_KEYS.GITHUB_ANALYSIS, {
-                jobId: job.attrs._id,
+                jobId: String(job.attrs._id),
                 ...jobData
             });
 
