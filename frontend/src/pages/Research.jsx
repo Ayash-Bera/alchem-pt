@@ -133,22 +133,27 @@ const Research = () => {
     const isJobCompleted = currentJob && currentJob.status === 'completed' && jobResult;
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900">
-            <div className="container mx-auto px-6 py-8">
-                <div className="max-w-6xl mx-auto">
-                    {/* Header */}
-                    <div className="text-center mb-12">
-                        <h1 className="text-4xl font-bold mb-4 bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+        <div className="min-h-screen">
+            {/* Main Content Container */}
+            <div className="container mx-auto px-6 py-12">
+                <div className="max-w-7xl mx-auto">
+
+                    {/* Page Header */}
+                    <div className="text-center mb-16">
+                        <h1 className="text-5xl font-bold mb-6 bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
                             Deep Research Agent
                         </h1>
-                        <p className="text-gray-300 text-lg max-w-2xl mx-auto">
-                            Create comprehensive research reports using AI-powered analysis
+                        <p className="text-xl text-gray-300 max-w-3xl mx-auto leading-relaxed">
+                            Create comprehensive research reports using AI-powered multi-step analysis
                         </p>
                     </div>
 
-                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+                    {/* Main Content Grid */}
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+
                         {/* Left Column: Form and Progress */}
-                        <div className="space-y-8">
+                        <div className="lg:col-span-5 space-y-8">
+                            {/* Research Form */}
                             <ResearchForm
                                 onSubmit={handleSubmitJob}
                                 isRunning={isJobRunning}
@@ -156,6 +161,7 @@ const Research = () => {
                                 currentJobId={currentJob?.id}
                             />
 
+                            {/* Progress Display - Only show when job exists */}
                             {currentJob && (
                                 <ProgressDisplay
                                     job={currentJob}
@@ -164,51 +170,69 @@ const Research = () => {
                             )}
                         </div>
 
-                        {/* Right Column: Results */}
-                        <div className="min-h-[600px]">
-                            {isJobCompleted ? (
-                                <ResultsDisplay
-                                    job={currentJob}
-                                    result={jobResult}
-                                />
-                            ) : (
-                                <div className="glass h-full flex items-center justify-center p-12">
-                                    <div className="text-center text-gray-400 max-w-md">
-                                        <div className="w-20 h-20 mx-auto mb-6 rounded-full glass-strong flex items-center justify-center">
-                                            <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                            </svg>
-                                        </div>
-                                        <h3 className="text-xl font-medium mb-3 text-white">
-                                            {currentJob ? 'Research in Progress' : 'Ready to Research'}
-                                        </h3>
-                                        <p className="text-gray-400">
-                                            {currentJob
-                                                ? 'Your research results will appear here when complete'
-                                                : 'Submit a research topic to get started'
-                                            }
-                                        </p>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    </div>
+                        {/* Right Column: Results Area */}
+                        <div className="lg:col-span-7">
+                            <div className="h-full min-h-[700px]">
+                                {isJobCompleted ? (
+                                    <ResultsDisplay
+                                        job={currentJob}
+                                        result={jobResult}
+                                    />
+                                ) : (
+                                    <div className="glass h-full flex flex-col items-center justify-center p-12 text-center">
+                                        <div className="max-w-md">
+                                            {/* Icon Container */}
+                                            <div className="w-24 h-24 mx-auto mb-8 rounded-full glass-strong flex items-center justify-center">
+                                                <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                </svg>
+                                            </div>
 
-                    {/* Connection Status */}
-                    <div className="fixed bottom-6 right-6">
-                        <div className={`flex items-center space-x-3 px-4 py-3 rounded-xl glass ${isConnected ? 'border-green-500/30' : 'border-red-500/30'
-                            }`}>
-                            <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'
-                                } ${isConnected ? 'animate-pulse' : ''}`} />
-                            <span className="text-sm font-medium">
-                                {isConnected ? 'Connected' : 'Disconnected'}
-                            </span>
+                                            {/* Status Text */}
+                                            <h3 className="text-2xl font-bold mb-4 text-white">
+                                                {currentJob ? 'Research in Progress' : 'Ready to Research'}
+                                            </h3>
+
+                                            <p className="text-gray-400 text-lg leading-relaxed">
+                                                {currentJob
+                                                    ? 'Your comprehensive research results will appear here when the analysis is complete'
+                                                    : 'Submit a research topic to begin your AI-powered deep analysis'
+                                                }
+                                            </p>
+
+                                            {/* Progress indicator for running jobs */}
+                                            {isJobRunning && (
+                                                <div className="mt-8">
+                                                    <div className="flex items-center justify-center space-x-2 text-blue-400">
+                                                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce"></div>
+                                                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                                                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                                                    </div>
+                                                    <p className="text-sm text-gray-500 mt-3">Processing your request...</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
+
+            {/* Connection Status Indicator */}
+            <div className="fixed bottom-6 right-6 z-50">
+                <div className={`flex items-center space-x-3 px-4 py-3 rounded-xl glass shadow-lg ${isConnected ? 'border-green-500/30' : 'border-red-500/30'
+                    }`}>
+                    <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'
+                        } ${isConnected ? 'animate-pulse' : ''}`} />
+                    <span className="text-sm font-medium text-white">
+                        {isConnected ? 'Connected' : 'Reconnecting...'}
+                    </span>
+                </div>
+            </div>
         </div>
     );
-}
+};
 
 export default Research;

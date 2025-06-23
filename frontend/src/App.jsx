@@ -3,7 +3,6 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import Research from './pages/Research';
 import Dashboard from './pages/Dashboard';
 import Navbar from './components/Layout/Navbar';
-import './index.css';
 
 function App() {
   return (

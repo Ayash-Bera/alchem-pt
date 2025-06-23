@@ -1,5 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
+/* Reset and base styles */
 * {
   margin: 0;
   padding: 0;
@@ -10,41 +11,52 @@ html,
 body,
 #root {
   height: 100%;
+  width: 100%;
   overflow-x: hidden;
 }
 
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  background: linear-gradient(135deg, #0c0c0c 0%, #1a1a2e 50%, #16213e 100%);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: linear-gradient(135deg, #0f0f0f 0%, #1a1a2e 25%, #16213e 50%, #0f3460 75%, #533483 100%);
   background-attachment: fixed;
   color: #ffffff;
   line-height: 1.6;
+  min-height: 100vh;
 }
 
-/* Glassmorphic base classes */
+/* Remove any default styling */
+#root {
+  display: block;
+}
+
+/* Glassmorphic effects */
 .glass {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.08);
   backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 16px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-}
-
-.glass-strong {
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(25px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 12px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
 }
 
-/* Input styles */
+.glass-strong {
+  background: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(25px);
+  -webkit-backdrop-filter: blur(25px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+/* Input and form styling */
 input,
 select,
 textarea {
-  background: rgba(255, 255, 255, 0.05) !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  backdrop-filter: blur(10px) !important;
   border: 1px solid rgba(255, 255, 255, 0.2) !important;
-  color: white !important;
+  color: #ffffff !important;
+  border-radius: 8px !important;
 }
 
 input::placeholder,
@@ -57,38 +69,108 @@ select:focus,
 textarea:focus {
   border-color: #3b82f6 !important;
   outline: none !important;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2) !important;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3) !important;
+  background: rgba(255, 255, 255, 0.12) !important;
 }
 
-/* Button styles */
+/* Select dropdown styling */
+select option {
+  background: #1a1a2e !important;
+  color: #ffffff !important;
+  border: none !important;
+}
+
+/* Button hover effects */
 button {
-  transition: all 0.2s ease;
+  transition: all 0.3s ease;
+  border: none;
+  cursor: pointer;
 }
 
 button:hover {
   transform: translateY(-1px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
 }
 
-/* Scrollbar */
+button:disabled {
+  transform: none;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Checkbox styling */
+input[type="checkbox"] {
+  accent-color: #3b82f6;
+  width: 16px !important;
+  height: 16px !important;
+}
+
+/* Scrollbar styling */
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 8px;
 }
 
 ::-webkit-scrollbar-track {
   background: rgba(255, 255, 255, 0.1);
-  border-radius: 3px;
+  border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.3);
-  border-radius: 3px;
+  border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.5);
 }
 
-/* Container max width */
+/* Container and layout */
 .container {
   max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 1.5rem;
+}
+
+/* Text selection */
+::selection {
+  background: rgba(59, 130, 246, 0.3);
+  color: #ffffff;
+}
+
+/* Remove any animations that might cause issues */
+@media (prefers-reduced-motion: reduce) {
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Grid and flex utilities */
+.grid {
+  display: grid;
+}
+
+.flex {
+  display: flex;
+}
+
+/* Hide any potential React logo */
+.App-logo {
+  display: none !important;
+}
+
+svg[data-name="react-logo"] {
+  display: none !important;
+}
+
+/* Ensure proper text rendering */
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
