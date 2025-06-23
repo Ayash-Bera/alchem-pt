@@ -9,7 +9,7 @@ const deepResearchJob = async (job) => {
     logger.info(`Starting deep research job for topic: ${topic}`, { jobId, researchDepth });
 
     try {
-	job.attrs.progress = 5;
+        job.attrs.progress = 5;
         await job.save();
 
         // Step 1: Create intelligent research plan
@@ -17,7 +17,7 @@ const deepResearchJob = async (job) => {
         const researchPlan = await createResearchPlan(topic, researchDepth, sources || [], deliverables || ['summary']);
         logger.info('Research plan created successfully', { jobId, stepCount: researchPlan.steps?.length });
 
-	job.attrs.progress = 25;
+        job.attrs.progress = 25;
         await job.save();
 
         // Step 2: Execute with our new intelligent system
@@ -25,20 +25,20 @@ const deepResearchJob = async (job) => {
         const researchResults = await executeResearchPlan(researchPlan, job);
         logger.info('Research execution completed', { jobId, resultCount: researchResults.length });
 
-	job.attrs.progress = 70;
+        job.attrs.progress = 70;
         await job.save();
 
         // Continue with synthesis...
         logger.info('Synthesizing findings...', { jobId });
         const synthesis = await synthesizeFindings(researchResults, deliverables || ['summary']);
 
-	job.attrs.progress = 85;
+        job.attrs.progress = 85;
         await job.save();
 
         logger.info('Generating final deliverables...', { jobId });
         const finalReport = await generateResearchDeliverables(topic, researchResults, synthesis, deliverables || ['summary']);
 
-	job.attrs.progress = 95;
+        job.attrs.progress = 95;
         await job.save();
 
         const result = {
@@ -56,7 +56,7 @@ const deepResearchJob = async (job) => {
             }
         };
 
-	job.attrs.progress = 100;
+        job.attrs.progress = 100;
         await job.save();
 
         const totalCosts = calculateTotalCosts(researchResults, synthesis, finalReport);
@@ -294,80 +294,87 @@ const selectOptimalMethodology = (complexity, tokenBudget) => {
 
 // Cost-effective planning prompt
 const createCostEffectivePlanningPrompt = (topic, depth, sources, deliverables, complexity) => {
-    return `
-Create an EFFICIENT and COST-EFFECTIVE research plan for: ${topic}
+    const stepCount = complexity.level === 'low' ? 4 : complexity.level === 'medium' ? 6 : 8;
 
-CONSTRAINTS:
-- Complexity Level: ${complexity.level}
-- Research Depth: ${depth}
-- Token Budget: LIMITED (optimize for quality vs cost)
+    return `
+Create a research plan for: ${topic}
+
+REQUIREMENTS:
+- Complexity: ${complexity.level}
+- Depth: ${depth}
+- Steps needed: ${stepCount}
 - Deliverables: ${deliverables.join(', ')}
 
-OPTIMIZATION REQUIREMENTS:
-1. Minimize redundant research steps
-2. Maximize information gathering per API call
-3. Identify steps that can run in parallel
-4. Focus on high-impact, low-cost research methods
-5. Create ${complexity.level === 'low' ? '3-4' : complexity.level === 'medium' ? '5-6' : '6-8'} focused steps
+Return ONLY valid JSON in this exact format:
+{
+  "steps": [
+    {
+      "number": 1,
+      "name": "Initial Research and Context Analysis",
+      "description": "Gather foundational information and establish research context",
+      "methodology": "systematic_review",
+      "expectedOutput": "Comprehensive overview with key concepts defined",
+      "estimatedTokens": 1500,
+      "canRunInParallel": false,
+      "dependencies": [],
+      "efficiency": "high"
+    }
+  ]
+}
 
-For each step, specify:
-- Step name and objective
-- Expected information yield
-- Parallelization potential (Yes/No)
-- Token efficiency rating (High/Medium/Low)
-
-Create a lean, efficient research methodology that maximizes insight per dollar spent.
+Generate exactly ${stepCount} steps. Each step must have all required fields.
 `;
 };
 
 
 const parseResearchSteps = (planContent, depth, tokenBudget) => {
-    const stepPatterns = [
-        'Step 1:', 'Step 2:', 'Step 3:', 'Step 4:', 'Step 5:', 'Step 6:', 'Step 7:', 'Step 8:'
-    ];
+    try {
+        // Try to extract JSON from the response
+        let jsonStr = planContent.trim();
 
-    const steps = [];
-    const lines = planContent.split('\n');
-    let currentStep = null;
+        // Find JSON object in response
+        const jsonStart = jsonStr.indexOf('{');
+        const jsonEnd = jsonStr.lastIndexOf('}') + 1;
 
-    lines.forEach(line => {
-        const stepMatch = stepPatterns.find(pattern => line.includes(pattern));
-        if (stepMatch) {
-            if (currentStep) {
-                steps.push(currentStep);
-            }
-
-            // Extract efficiency indicators from the plan
-            const isHighEfficiency = line.toLowerCase().includes('high') && line.toLowerCase().includes('efficiency');
-            const canParallelize = line.toLowerCase().includes('parallel') || line.toLowerCase().includes('concurrent');
-
-            currentStep = {
-                number: steps.length + 1,
-                name: line.replace(stepMatch, '').trim(),
-                description: '',
-                expectedOutput: '',
-                estimatedTokens: calculateStepTokenAllocation(tokenBudget, depth, steps.length + 1),
-                efficiency: isHighEfficiency ? 'high' : 'medium',
-                parallelizable: canParallelize
-            };
-        } else if (currentStep && line.trim()) {
-            currentStep.description += line.trim() + ' ';
+        if (jsonStart === -1 || jsonEnd === 0) {
+            logger.warn('No JSON found in plan content, falling back to default steps');
+            return generateDefaultSteps(depth, tokenBudget);
         }
-    });
 
-    if (currentStep) {
-        steps.push(currentStep);
+        jsonStr = jsonStr.substring(jsonStart, jsonEnd);
+
+        // Parse JSON
+        const parsedPlan = JSON.parse(jsonStr);
+
+        if (!parsedPlan.steps || !Array.isArray(parsedPlan.steps)) {
+            throw new Error('Invalid JSON structure: missing steps array');
+        }
+
+        // Validate and process steps
+        const processedSteps = parsedPlan.steps.map((step, index) => {
+            return {
+                number: step.number || index + 1,
+                name: step.name || `Research Step ${index + 1}`,
+                description: step.description || 'Conduct research analysis',
+                methodology: step.methodology || 'systematic_analysis',
+                expectedOutput: step.expectedOutput || 'Research findings and analysis',
+                estimatedTokens: step.estimatedTokens || calculateStepTokenAllocation(tokenBudget, depth, index + 1),
+                canRunInParallel: Boolean(step.canRunInParallel),
+                dependencies: Array.isArray(step.dependencies) ? step.dependencies : [],
+                efficiency: step.efficiency || 'medium'
+            };
+        });
+
+        logger.info(`Successfully parsed ${processedSteps.length} steps from JSON`);
+        return processedSteps;
+
+    } catch (error) {
+        logger.error('JSON parsing failed:', error.message);
+        logger.warn('Falling back to default step generation');
+        return generateDefaultSteps(depth, tokenBudget);
     }
-
-    // Ensure optimal step count for cost efficiency
-    const optimalStepCount = depth === 'shallow' ? 4 : depth === 'medium' ? 6 : 8;
-
-    while (steps.length < optimalStepCount) {
-        steps.push(generateDefaultStep(steps.length + 1, depth, tokenBudget));
-    }
-
-    return steps.slice(0, optimalStepCount); // Cap at optimal count
 };
+
 
 
 // Helper function for token allocation per step
@@ -392,25 +399,74 @@ const getStepTokenEstimate = (depth) => {
     }
 };
 
-const generateDefaultStep = (stepNumber, depth) => {
-    const defaultSteps = {
-        1: { name: 'Initial Research and Context Setting', description: 'Gather basic information and establish context' },
-        2: { name: 'Literature Review and Source Analysis', description: 'Review existing research and credible sources' },
-        3: { name: 'Key Findings Identification', description: 'Identify and analyze key findings and data points' },
-        4: { name: 'Comparative Analysis', description: 'Compare different perspectives and approaches' },
-        5: { name: 'Synthesis and Pattern Recognition', description: 'Synthesize information and identify patterns' },
-        6: { name: 'Critical Evaluation', description: 'Critically evaluate findings and assess validity' },
-        7: { name: 'Implications and Applications', description: 'Analyze implications and practical applications' },
-        8: { name: 'Future Directions and Recommendations', description: 'Identify future research directions and recommendations' }
-    };
+const validateStepStructure = (step, index) => {
+    const required = ['name', 'description'];
+    const missing = required.filter(field => !step[field]);
 
-    return {
-        number: stepNumber,
-        name: defaultSteps[stepNumber]?.name || `Research Step ${stepNumber}`,
-        description: defaultSteps[stepNumber]?.description || 'Conduct additional research analysis',
-        expectedOutput: 'Detailed analysis and findings',
-        estimatedTokens: getStepTokenEstimate(depth)
-    };
+    if (missing.length > 0) {
+        logger.warn(`Step ${index + 1} missing fields: ${missing.join(', ')}`);
+        return false;
+    }
+
+    return true;
+};
+
+const generateDefaultSteps = (depth, tokenBudget) => {
+    const stepCount = depth === 'shallow' ? 4 : depth === 'medium' ? 6 : 8;
+    const defaultStepTemplates = [
+        {
+            name: "Initial Research and Context Analysis",
+            description: "Gather foundational information and establish research context",
+            methodology: "systematic_review"
+        },
+        {
+            name: "Literature Review and Source Analysis",
+            description: "Review existing research and analyze credible sources",
+            methodology: "literature_analysis"
+        },
+        {
+            name: "Key Findings Identification",
+            description: "Identify and analyze key findings and data points",
+            methodology: "data_analysis"
+        },
+        {
+            name: "Comparative Analysis",
+            description: "Compare different perspectives and approaches",
+            methodology: "comparative_study"
+        },
+        {
+            name: "Synthesis and Pattern Recognition",
+            description: "Synthesize information and identify patterns",
+            methodology: "pattern_analysis"
+        },
+        {
+            name: "Critical Evaluation",
+            description: "Critically evaluate findings and assess validity",
+            methodology: "critical_analysis"
+        },
+        {
+            name: "Implications and Applications",
+            description: "Analyze implications and practical applications",
+            methodology: "application_analysis"
+        },
+        {
+            name: "Conclusions and Recommendations",
+            description: "Draw conclusions and provide recommendations",
+            methodology: "synthesis_conclusion"
+        }
+    ];
+
+    return defaultStepTemplates.slice(0, stepCount).map((template, index) => ({
+        number: index + 1,
+        name: template.name,
+        description: template.description,
+        methodology: template.methodology,
+        expectedOutput: 'Detailed research analysis and findings',
+        estimatedTokens: calculateStepTokenAllocation(tokenBudget, depth, index + 1),
+        canRunInParallel: index > 0 && index < stepCount - 1, // Middle steps can be parallel
+        dependencies: index === 0 ? [] : [index - 1],
+        efficiency: 'medium'
+    }));
 };
 
 const executeResearchPlan = async (plan, job) => {
@@ -470,7 +526,7 @@ const executeResearchPlan = async (plan, job) => {
 
             // Update progress
             currentProgress += (group.steps.length * progressIncrement);
-            job.attrs.progress=(Math.min(currentProgress, 70));
+            job.attrs.progress = (Math.min(currentProgress, 70));
             await job.save();
 
         } catch (error) {
@@ -1066,11 +1122,11 @@ const detectDomain = (topic) => {
 // Quality Control Functions
 const retryStepWithEnhancement = async (step, context, result) => {
     logger.info(`Retrying step ${step.number} with enhancement`);
-    
+
     try {
         // Analyze why the original failed
         const failureReasons = analyzeStepFailure(result);
-        
+
         // Create enhanced prompt with more context and clearer instructions
         const enhancedPrompt = `
 ENHANCED RETRY - Step ${step.number}: ${step.name}
@@ -1099,7 +1155,7 @@ Deliver high-quality, structured research that addresses the identified gaps.
 
         logger.info(`Step ${step.number} retry successful`);
         return retryResult;
-        
+
     } catch (error) {
         logger.error(`Step ${step.number} retry failed:`, error);
         return null;
@@ -1108,7 +1164,7 @@ Deliver high-quality, structured research that addresses the identified gaps.
 
 const generateFallbackStepResult = async (step, context, error) => {
     logger.warn(`Generating fallback result for step ${step.number}`);
-    
+
     try {
         // Create simplified prompt for fallback
         const fallbackPrompt = `
@@ -1144,7 +1200,7 @@ Keep response concise but informative (300-500 words).
             originalError: error.message,
             completedAt: new Date()
         };
-        
+
     } catch (fallbackError) {
         logger.error(`Fallback generation failed for step ${step.number}:`, fallbackError);
         return null;
@@ -1154,46 +1210,46 @@ Keep response concise but informative (300-500 words).
 // Adaptive Intelligence Functions
 const shouldReplanBasedOnFindings = (results, plan) => {
     if (results.length < 2) return false;
-    
+
     // Check for significant quality degradation
     const recentQuality = results.slice(-2).map(r => r.quality?.score || 0);
     const avgRecentQuality = recentQuality.reduce((a, b) => a + b, 0) / recentQuality.length;
-    
+
     if (avgRecentQuality < 0.4) {
         logger.info('Replanning triggered: Quality degradation detected');
         return true;
     }
-    
+
     // Check for unexpected research direction
     const topicKeywords = plan.topic.toLowerCase().split(' ');
     const recentContent = results.slice(-2).map(r => r.content.toLowerCase()).join(' ');
-    const keywordOverlap = topicKeywords.filter(keyword => 
+    const keywordOverlap = topicKeywords.filter(keyword =>
         recentContent.includes(keyword)
     ).length / topicKeywords.length;
-    
+
     if (keywordOverlap < 0.3) {
         logger.info('Replanning triggered: Research direction drift detected');
         return true;
     }
-    
+
     // Check for excessive conflicts
     const conflicts = results.slice(-2).flatMap(r => r.conflictAreas || []);
     if (conflicts.length > 3) {
         logger.info('Replanning triggered: Too many conflicts detected');
         return true;
     }
-    
+
     return false;
 };
 
 const adaptRemainingSteps = async (remainingGroups, context, plan) => {
     logger.info('Adapting remaining research steps based on findings');
-    
+
     try {
         // Extract key insights from completed work
         const completedInsights = context.cumulativeInsights || [];
         const identifiedGaps = context.identifiedConflicts || [];
-        
+
         // Create adaptation prompt
         const adaptationPrompt = `
 RESEARCH ADAPTATION REQUIRED
@@ -1203,9 +1259,9 @@ Completed Insights: ${completedInsights.slice(0, 10).join(', ')}
 Identified Issues: ${identifiedGaps.join(', ')}
 
 Current remaining research steps:
-${remainingGroups.map((group, i) => 
-    group.steps.map(step => `${i+1}. ${step.name}`).join('\n')
-).join('\n')}
+${remainingGroups.map((group, i) =>
+            group.steps.map(step => `${i + 1}. ${step.name}`).join('\n')
+        ).join('\n')}
 
 Please suggest 2-3 focused research steps that:
 1. Address identified gaps and conflicts
@@ -1222,7 +1278,7 @@ Format as: Step Name | Brief Description | Focus Area
 
         // Parse adaptation suggestions and modify remaining groups
         const adaptedSteps = parseAdaptationSuggestions(adaptationResult.content, plan);
-        
+
         if (adaptedSteps.length > 0) {
             logger.info(`Successfully adapted ${adaptedSteps.length} remaining steps`);
             return [{
@@ -1230,18 +1286,18 @@ Format as: Step Name | Brief Description | Focus Area
                 steps: adaptedSteps
             }];
         }
-        
+
     } catch (error) {
         logger.error('Error adapting remaining steps:', error);
     }
-    
+
     // Return original groups if adaptation fails
     return remainingGroups;
 };
 
 const detectNewConflicts = async (results, context) => {
     const conflicts = [];
-    
+
     // Simple keyword-based conflict detection
     const conflictPairs = [
         ['increase', 'decrease', 'reduction'],
@@ -1251,36 +1307,36 @@ const detectNewConflicts = async (results, context) => {
         ['supports', 'contradicts', 'opposes'],
         ['validates', 'invalidates', 'disproves']
     ];
-    
+
     const allContent = results.map(r => r.content.toLowerCase()).join(' ');
-    
+
     conflictPairs.forEach(([positive, negative, alternative]) => {
         const hasPositive = allContent.includes(positive);
         const hasNegative = allContent.includes(negative) || allContent.includes(alternative);
-        
+
         if (hasPositive && hasNegative) {
             conflicts.push(`${positive} vs ${negative}`);
         }
     });
-    
+
     // Check for numerical conflicts
     const numbers = allContent.match(/\d+%|\$\d+|\d+\.\d+/g) || [];
     if (numbers.length > 4) {
         // Simple heuristic: if we have many numbers, there might be conflicting data
         conflicts.push('numerical data inconsistencies');
     }
-    
+
     return conflicts;
 };
 
 // Error Recovery Functions
 const handleExecutionError = async (error, group, context, plan) => {
     logger.error(`Handling execution error for group ${group.type}:`, error.message);
-    
+
     try {
         // Assess error severity
         const errorSeverity = assessErrorSeverity(error);
-        
+
         if (errorSeverity === 'low') {
             // Try to continue with partial results
             const partialResults = await generatePartialResults(group, context, plan);
@@ -1305,7 +1361,7 @@ const handleExecutionError = async (error, group, context, plan) => {
                 error: error.message
             };
         }
-        
+
     } catch (recoveryError) {
         logger.error('Error recovery failed:', recoveryError);
         return { canContinue: false, error: recoveryError.message };
@@ -1314,16 +1370,16 @@ const handleExecutionError = async (error, group, context, plan) => {
 
 const recoverFailedParallelSteps = async (failedResults, successfulResults, context, plan) => {
     logger.info(`Attempting to recover ${failedResults.length} failed parallel steps`);
-    
+
     const recoveredResults = [];
-    
+
     for (const failure of failedResults) {
         try {
             // Use successful results to provide context for failed step
-            const successContext = successfulResults.map(s => 
+            const successContext = successfulResults.map(s =>
                 `${s.stepName}: ${s.content.substring(0, 200)}...`
             ).join('\n');
-            
+
             const recoveryPrompt = `
 PARALLEL STEP RECOVERY
 
@@ -1358,12 +1414,12 @@ Keep response focused and concise (400-600 words).
                 originalError: failure.error,
                 completedAt: new Date()
             });
-            
+
         } catch (recoveryError) {
             logger.error(`Recovery failed for step ${failure.stepNumber}:`, recoveryError);
         }
     }
-    
+
     logger.info(`Successfully recovered ${recoveredResults.length} out of ${failedResults.length} failed steps`);
     return recoveredResults;
 };
@@ -1371,18 +1427,18 @@ Keep response focused and concise (400-600 words).
 // Monitoring Functions
 const calculateQualityTrend = (results) => {
     if (results.length < 2) return 'insufficient_data';
-    
+
     const scores = results.map(r => r.quality?.score || 0.5);
     const recent = scores.slice(-3);
     const earlier = scores.slice(0, -3);
-    
+
     if (earlier.length === 0) return 'stable';
-    
+
     const recentAvg = recent.reduce((a, b) => a + b, 0) / recent.length;
     const earlierAvg = earlier.reduce((a, b) => a + b, 0) / earlier.length;
-    
+
     const difference = recentAvg - earlierAvg;
-    
+
     if (difference > 0.15) return 'improving';
     if (difference < -0.15) return 'declining';
     return 'stable';
@@ -1391,37 +1447,37 @@ const calculateQualityTrend = (results) => {
 // Helper Functions
 const analyzeStepFailure = (result) => {
     const failures = [];
-    
+
     if (!result.content || result.content.length < 200) {
         failures.push('insufficient content length');
     }
-    
+
     if (result.quality?.score < 0.3) {
         failures.push('low information density');
     }
-    
+
     if (!result.content.includes('.') || result.content.split('.').length < 3) {
         failures.push('lack of structure');
     }
-    
+
     return failures.length > 0 ? failures : ['general quality issues'];
 };
 
 const assessErrorSeverity = (error) => {
     const message = error.message.toLowerCase();
-    
+
     if (message.includes('timeout') || message.includes('rate limit')) {
         return 'medium';
     }
-    
+
     if (message.includes('authentication') || message.includes('permission')) {
         return 'high';
     }
-    
+
     if (message.includes('network') || message.includes('connection')) {
         return 'medium';
     }
-    
+
     return 'low';
 };
 
@@ -1475,7 +1531,7 @@ const simplifyExecutionGroup = (group) => {
 const parseAdaptationSuggestions = (content, plan) => {
     const lines = content.split('\n').filter(line => line.includes('|'));
     const adaptedSteps = [];
-    
+
     lines.forEach((line, index) => {
         const parts = line.split('|').map(p => p.trim());
         if (parts.length >= 2) {
@@ -1489,7 +1545,7 @@ const parseAdaptationSuggestions = (content, plan) => {
             });
         }
     });
-    
+
     return adaptedSteps.slice(0, 3); // Limit to 3 adaptive steps
 };
 
