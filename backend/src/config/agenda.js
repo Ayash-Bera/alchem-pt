@@ -13,7 +13,7 @@ const initializeAgenda = async () => {
         // Initialize Agenda with MongoDB
         agenda = new Agenda({
             mongo: db,
-            collection: 'agenda_jobs',
+            collection: 'agendajobs',
             processEvery: '10 seconds', // How often to check for jobs
             maxConcurrency: 10, // Maximum number of jobs to run concurrently
             defaultConcurrency: 5, // Default concurrency for job types
