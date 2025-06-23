@@ -3,7 +3,7 @@ const logger = require('../utils/logger');
 
 class AlchemystService {
     constructor() {
-        this.baseURL = process.env.ALCHEMYST_API_URL || 'https://api.alchemyst.ai';
+        this.baseURL = process.env.ALCHEMYST_API_URL || 'https://platform-backend.getalchemystai.com/api/v1';
         this.apiKey = process.env.ALCHEMYST_API_KEY;
         this.defaultTimeout = 30000; // 30 seconds
 
@@ -23,8 +23,7 @@ class AlchemystService {
             };
 
             logger.info('Calling Alchemyst API for analysis generation');
-
-            const response = await axios.post(`${this.baseURL}/v1/chat/completions`, requestData, {
+            const response = await axios.post(`${this.baseURL}/chat/completions`, requestData, {
                 headers: {
                     'Authorization': `Bearer ${this.apiKey}`,
                     'Content-Type': 'application/json'
@@ -323,13 +322,30 @@ Current Step: ${step.name}
                 await new Promise(resolve => setTimeout(resolve, delay));
             }
         }
-
         return {
             results,
             totalProcessed: results.length,
             successful: results.filter(r => r.success).length,
             failed: results.filter(r => !r.success).length
         };
+    }
+
+    async testConnection() {
+        try {
+            const testPrompt = "Hello, please respond with 'API connection successful'";
+            const result = await this.generateAnalysis(testPrompt, {
+                maxTokens: 50,
+                temperature: 0
+            });
+
+            logger.info('Alchemyst API test successful:', {
+                response: result.content.substring(0, 100)
+            });
+            return { success: true, response: result.content };
+        } catch (error) {
+            logger.error('Alchemyst API test failed:', error.message);
+            return { success: false, error: error.message };
+        }
     }
 }
 

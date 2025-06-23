@@ -35,7 +35,7 @@ router.get('/detailed', async (req, res) => {
         const [dbHealth, mqHealth, apiHealth] = await Promise.allSettled([
             checkDatabaseHealth(),
             checkRabbitMQHealth(),
-            alchemystService.checkAPIHealth()
+            alchemystService.testConnection()
         ]);
 
         const health = {
@@ -96,6 +96,26 @@ router.get('/ready', async (req, res) => {
     }
 });
 
+// Test Alchemyst API connection
+router.get('/alchemyst-test', async (req, res) => {
+    try {
+        const alchemystService = require('../services/alchemystService');
+        const result = await alchemystService.testConnection();
+
+        res.json({
+            success: result.success,
+            message: result.success ? 'Alchemyst API connected successfully' : 'Alchemyst API connection failed',
+            details: result,
+            timestamp: new Date()
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message,
+            timestamp: new Date()
+        });
+    }
+});
 // Liveness probe
 router.get('/live', (req, res) => {
     res.json({
