@@ -889,6 +889,44 @@ const generateExecutionSummary = async (results, plan) => {
 };
 
 //helper funcs 
+const updateStepContext = async (context, result, plan) => {
+    const updatedContext = { ...context };
+
+    // Add insights from the current step
+    const stepInsights = extractKeyInsights(result.content);
+    updatedContext.cumulativeInsights = [
+        ...(context.cumulativeInsights || []),
+        ...stepInsights
+    ].slice(-15); // Keep last 15 insights
+
+    // Update quality baseline
+    updatedContext.qualityBaseline = result.quality?.category || 'standard';
+
+    // Track step completion
+    updatedContext.completedSteps = (context.completedSteps || 0) + 1;
+
+    // Update conflict areas if any new ones detected
+    const newConflicts = await detectNewConflicts([result], context);
+    updatedContext.conflictAreas = [
+        ...(context.conflictAreas || []),
+        ...newConflicts
+    ];
+
+    return updatedContext;
+};
+
+const assessContentCoherence = async (content, context) => {
+    // Simple coherence scoring based on topic relevance
+    const topicWords = context.topic.toLowerCase().split(' ');
+    const contentWords = content.toLowerCase().split(' ');
+
+    const relevantWords = topicWords.filter(word =>
+        contentWords.some(cWord => cWord.includes(word) || word.includes(cWord))
+    );
+
+    const coherenceScore = relevantWords.length / topicWords.length;
+    return Math.min(1.0, coherenceScore + 0.3); // Add base coherence
+};
 
 const calculateOptimizedDuration = (steps, complexity) => {
     const baseTimePerStep = complexity.level === 'low' ? 30 : complexity.level === 'medium' ? 45 : 60;
