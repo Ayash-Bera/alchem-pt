@@ -4,6 +4,14 @@ const { publishMessage, ROUTING_KEYS } = require('../config/rabbitmq');
 const { getDatabase } = require('../config/database');
 const logger = require('../utils/logger');
 
+const isAgendaAvailable = () => {
+    try {
+        const { getAgenda } = require('../config/agenda');
+        return !!getAgenda();
+    } catch {
+        return false;
+    }
+};
 class JobService {
     constructor() {
         this.jobTypes = {
@@ -97,12 +105,6 @@ class JobService {
             if (!jobData.topic) {
                 throw new Error('Research topic is required');
             }
-
-            // Check if AgendaJS is available
-            if (!isAgendaAvailable()) {
-                throw new Error('Job processing service not available');
-            }
-
             // Add timeout to job creation
             const createJobWithTimeout = Promise.race([
                 createJob('deep-research', jobData, {

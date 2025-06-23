@@ -12,37 +12,25 @@ const deepResearchJob = async (job) => {
         job.progress(5);
         await job.save();
 
-        // Simplified research plan
-        const researchPlan = {
-            topic,
-            depth: researchDepth || 'medium',
-            steps: [
-                { number: 1, name: 'Initial Research', description: 'Basic topic overview' },
-                { number: 2, name: 'Analysis', description: 'Detailed analysis' },
-                { number: 3, name: 'Synthesis', description: 'Combine findings' }
-            ],
-            createdAt: new Date()
-        };
-
+        // Step 1: Create intelligent research plan
+        const researchPlan = await createResearchPlan(topic, researchDepth, sources || [], deliverables || ['summary']);
         job.progress(25);
         await job.save();
 
-        // Step 2: Execute multi-step research process
+        // Step 2: Execute with our new intelligent system
         const researchResults = await executeResearchPlan(researchPlan, job);
         job.progress(70);
         await job.save();
 
-        // Step 3: Synthesize findings
-        const synthesis = await synthesizeFindings(researchResults, deliverables);
+        // Continue with synthesis...
+        const synthesis = await synthesizeFindings(researchResults, deliverables || ['summary']);
         job.progress(85);
         await job.save();
 
-        // Step 4: Generate final deliverables
-        const finalReport = await generateResearchDeliverables(topic, researchResults, synthesis, deliverables);
+        const finalReport = await generateResearchDeliverables(topic, researchResults, synthesis, deliverables || ['summary']);
         job.progress(95);
         await job.save();
 
-        // Step 5: Package results and update metrics
         const result = {
             topic,
             researchDepth,
@@ -53,7 +41,7 @@ const deepResearchJob = async (job) => {
             metadata: {
                 processedAt: new Date(),
                 requestId,
-                totalSteps: researchPlan.steps.length,
+                totalSteps: researchPlan.steps?.length || 0,
                 version: '1.0'
             }
         };
@@ -61,65 +49,17 @@ const deepResearchJob = async (job) => {
         job.progress(100);
         await job.save();
 
-        // Update cost metrics
         const totalCosts = calculateTotalCosts(researchResults, synthesis, finalReport);
         await updateJobCosts(jobId, totalCosts);
 
-        logger.info(`Deep research completed for topic: ${topic}`, {
-            jobId,
-            stepsCompleted: researchPlan.steps.length,
-            totalCost: totalCosts.total
-        });
-
+        logger.info(`Deep research completed for topic: ${topic}`, { jobId });
         return result;
 
     } catch (error) {
-        logger.error(`Deep research failed for topic: ${topic}`, {
-            jobId,
-            error: error.message
-        });
-
+        logger.error(`Deep research failed for topic: ${topic}`, { jobId, error: error.message });
         await updateJobCosts(jobId, null, error.message);
         throw error;
     }
-};
-
-const executeSimplifiedResearch = async (plan, job) => {
-    const results = [];
-    const progressIncrement = 40 / plan.steps.length; // 40% for execution
-    let currentProgress = 25;
-
-    for (const step of plan.steps) {
-        try {
-            logger.info(`Executing step: ${step.name}`);
-
-            const prompt = `Research ${plan.topic}. Focus on: ${step.description}. Provide a brief analysis.`;
-
-            const stepResult = await alchemystService.generateAnalysis(prompt, {
-                maxTokens: 500,
-                temperature: 0.3
-            });
-
-            results.push({
-                stepNumber: step.number,
-                stepName: step.name,
-                content: stepResult.content,
-                tokens: stepResult.tokens,
-                cost: stepResult.cost,
-                completedAt: new Date()
-            });
-
-            currentProgress += progressIncrement;
-            job.progress(currentProgress);
-            await job.save();
-
-        } catch (error) {
-            logger.error(`Step ${step.number} failed:`, error);
-            // Continue with other steps
-        }
-    }
-
-    return results;
 };
 
 const createResearchPlan = async (topic, depth, sources, deliverables) => {
@@ -354,17 +294,6 @@ const parseResearchSteps = (planContent, depth, tokenBudget) => {
     return steps.slice(0, optimalStepCount); // Cap at optimal count
 };
 
-const calculateOptimizedDuration = (steps, complexity) => {
-    const baseTimePerStep = complexity.level === 'low' ? 30 : complexity.level === 'medium' ? 45 : 60;
-    const parallelSteps = steps.filter(step => step.canRunInParallel).length;
-    const sequentialSteps = steps.length - parallelSteps;
-
-    // Parallel steps take less total time
-    const parallelTime = parallelSteps > 0 ? Math.max(baseTimePerStep, parallelSteps * baseTimePerStep * 0.6) : 0;
-    const sequentialTime = sequentialSteps * baseTimePerStep;
-
-    return Math.floor(parallelTime + sequentialTime); // Total minutes
-};
 
 // Helper function for token allocation per step
 const calculateStepTokenAllocation = (tokenBudget, depth, stepNumber) => {
@@ -886,7 +815,16 @@ const generateExecutionSummary = async (results, plan) => {
 
 //helper funcs 
 
-// Add these helper functions that were referenced but not defined
+const calculateOptimizedDuration = (steps, complexity) => {
+    const baseTimePerStep = complexity.level === 'low' ? 30 : complexity.level === 'medium' ? 45 : 60;
+    const parallelSteps = steps.filter(step => step.canRunInParallel).length;
+    const sequentialSteps = steps.length - parallelSteps;
+
+    const parallelTime = parallelSteps > 0 ? Math.max(baseTimePerStep, parallelSteps * baseTimePerStep * 0.6) : 0;
+    const sequentialTime = sequentialSteps * baseTimePerStep;
+
+    return Math.floor(parallelTime + sequentialTime);
+};
 
 const detectDomain = (topic) => {
     const domains = {
