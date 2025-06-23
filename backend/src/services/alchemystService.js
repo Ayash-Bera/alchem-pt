@@ -5,7 +5,7 @@ class AlchemystService {
     constructor() {
         this.baseURL = process.env.ALCHEMYST_API_URL || 'https://platform-backend.getalchemystai.com/api/v1';
         this.apiKey = process.env.ALCHEMYST_API_KEY;
-        this.defaultTimeout = 30000; // 30 seconds
+        this.defaultTimeout = 1200000; // 30 seconds
 
         if (!this.apiKey) {
             logger.warn('Alchemyst API key not found. Some features may not work.');
@@ -42,7 +42,7 @@ class AlchemystService {
                     'Authorization': `Bearer ${this.apiKey}`,
                     'Content-Type': 'application/json'
                 },
-                timeout: 60000,
+                timeout: 1200000,
                 responseType: 'stream'
             });
 
@@ -121,7 +121,7 @@ class AlchemystService {
                 // Add timeout for the stream
                 setTimeout(() => {
                     reject(new Error('Stream timeout - no response received within timeout period'));
-                }, 60000);
+                }, 120000);
             });
 
         } catch (error) {
@@ -449,7 +449,7 @@ Current Step: ${step.name}
                     'Authorization': `Bearer ${this.apiKey}`,
                     'Content-Type': 'application/json'
                 },
-                timeout: 10000,
+                timeout: 120000,
                 responseType: 'stream'
             });
 
