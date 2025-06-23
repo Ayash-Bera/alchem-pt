@@ -98,6 +98,11 @@ class JobService {
                 throw new Error('Research topic is required');
             }
 
+            // Check if AgendaJS is available
+            if (!isAgendaAvailable()) {
+                throw new Error('Job processing service not available');
+            }
+
             // Add timeout to job creation
             const createJobWithTimeout = Promise.race([
                 createJob('deep-research', jobData, {

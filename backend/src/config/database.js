@@ -14,19 +14,17 @@ const connectDatabase = async () => {
 
         // Updated options for modern Mongoose/MongoDB versions
         const options = {
-            maxPoolSize: 5,
-            serverSelectionTimeoutMS: 3000, // Reduced timeout
-            socketTimeoutMS: 10000, // Reduced timeout
-            connectTimeoutMS: 5000, // Add connection timeout
-            bufferMaxEntries: 0, // Disable mongoose buffering
-        };
-            
+            // Remove deprecated options that are causing the error
+            maxPoolSize: 10, // Replaces maxPoolSize
+            serverSelectionTimeoutMS: 5000, // Keep this
+            socketTimeoutMS: 45000, // Keep this
 
             // These are the problematic deprecated options - REMOVED:
             // bufferMaxEntries: 0, 
             // bufferCommands: false,
             // useNewUrlParser: true,    // Default in Mongoose 6+
             // useUnifiedTopology: true, // Default in Mongoose 6+
+        };
 
         // Connect to MongoDB
         connection = await mongoose.connect(mongoUrl, options);

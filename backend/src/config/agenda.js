@@ -10,23 +10,16 @@ const initializeAgenda = async () => {
         // Get MongoDB connection
         const db = getDatabase();
 
-        // Initialize Agenda with MongoDB and proper error handling
+        // Initialize Agenda with MongoDB
         agenda = new Agenda({
             mongo: db,
             collection: 'agenda_jobs',
-            processEvery: '30 seconds', // Increased interval
-            maxConcurrency: 5, // Reduced concurrency
-            defaultConcurrency: 2, // Reduced default
-            defaultLockLifetime: 5 * 60 * 1000, // Reduced lock time
-            defaultLockLimit: 1
+            processEvery: '10 seconds', // How often to check for jobs
+            maxConcurrency: 10, // Maximum number of jobs to run concurrently
+            defaultConcurrency: 5, // Default concurrency for job types
+            defaultLockLifetime: 10 * 60 * 1000, // 10 minutes
+            defaultLockLimit: 1 // Only one instance of each job type by default
         });
-
-        // Add timeout to agenda operations
-        const timeoutPromise = new Promise((_, reject) => {
-            setTimeout(() => reject(new Error('Agenda initialization timeout')), 10000);
-        });
-
-        await Promise.race([agenda.start(), timeoutPromise]);
 
         // Set up event listeners for monitoring
         setupEventListeners();
