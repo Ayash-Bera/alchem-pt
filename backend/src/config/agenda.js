@@ -1,22 +1,20 @@
 const Agenda = require('agenda');
-const { getDatabase } = require('./database');
 const logger = require('../utils/logger');
 
 let agenda = null;
 
 const initializeAgenda = async () => {
     try {
-        const db = getDatabase();
-
-        // Create agenda with proper configuration
+        // FIXED: Use correct Agenda.js initialization pattern
         agenda = new Agenda({
-            mongo: db,
-            collection: 'agendaJobs',
-            processEvery: parseInt(process.env.AGENDA_PROCESS_EVERY) || 10000,
+            db: { 
+                address: process.env.MONGODB_URL || 'mongodb://agendauser:agenda123@10.0.0.6:27017/alchemyst_platform?replicaSet=alchemyst-rs',
+                collection: 'agendaJobs'
+            },
+            processEvery: '10 seconds',
             maxConcurrency: parseInt(process.env.AGENDA_MAX_CONCURRENCY) || 10,
             defaultConcurrency: parseInt(process.env.DEFAULT_JOB_CONCURRENCY) || 5,
-            defaultLockLifetime: parseInt(process.env.AGENDA_DEFAULT_LOCK_LIFETIME) || 600000,
-            defaultLockLimit: 1
+            defaultLockLifetime: parseInt(process.env.AGENDA_DEFAULT_LOCK_LIFETIME) || 600000
         });
 
         // Set up comprehensive event logging
@@ -25,38 +23,13 @@ const initializeAgenda = async () => {
         // Define all job processors
         await defineJobProcessors();
 
-        // Start agenda
-        await agenda.start();
-
-        agenda.on('processEvery', () => {
-            logger.debug('🔄 AgendaJS checking for jobs to process');
-        });
-
-        setInterval(() => {
-            if (agenda._isRunning) {
-                agenda._processEvery();
-            }
-        }, 5000);
-
-        logger.info('✅ AgendaJS is now ACTIVELY processing jobs', {
-            isRunning: agenda._isRunning,
-            processEvery: `${process.env.AGENDA_PROCESS_EVERY || 10000}ms`,
-            maxConcurrency: process.env.AGENDA_MAX_CONCURRENCY || 10
-        });
-
         logger.info('AgendaJS initialized successfully', {
-            processEvery: `${process.env.AGENDA_PROCESS_EVERY || 10000}ms`,
+            processEvery: '10 seconds',
             maxConcurrency: process.env.AGENDA_MAX_CONCURRENCY || 10,
             defaultConcurrency: process.env.DEFAULT_JOB_CONCURRENCY || 5,
             lockLifetime: `${process.env.AGENDA_DEFAULT_LOCK_LIFETIME || 600000}ms`,
             collection: 'agendaJobs'
         });
-
-        // Force immediate processing check
-        setTimeout(() => {
-            agenda._processEvery();
-            logger.info('Initial job processing triggered');
-        }, 2000);
 
         return agenda;
     } catch (error) {
@@ -67,13 +40,15 @@ const initializeAgenda = async () => {
 
 const setupEventListeners = () => {
     agenda.on('ready', () => {
-        logger.info('AgendaJS ready for processing');
+        logger.info('🟢 AgendaJS ready for processing');
     });
 
     agenda.on('start', (job) => {
-        logger.info(`Job started: ${job.attrs.name}`, {
+        logger.info(`🎯 JOB STARTING: ${job.attrs.name}`, {
             jobId: job.attrs._id,
-            topic: job.attrs.data?.topic
+            topic: job.attrs.data?.topic || 'N/A',
+            scheduledFor: job.attrs.nextRunAt,
+            actualStart: new Date()
         });
         updateJobMetrics(job.attrs._id, 'running', { started_at: new Date() });
     });
@@ -108,18 +83,18 @@ const setupEventListeners = () => {
     });
 
     agenda.on('processEvery', () => {
-        logger.debug('AgendaJS processing cycle started');
+        logger.debug('🔄 AgendaJS checking for jobs to process');
     });
 };
 
 const defineJobProcessors = async () => {
     // Import job processors
     const githubAnalysisJob = require('../jobs/githubAnalysisJob');
-    const documentSummaryJob = require('../jobs/documentSummaryJob');
+    const documentSummaryJob = require('../jobs/documentSummaryJob'); 
     const deepResearchJob = require('../jobs/deepResearchJob');
 
     // Define processors with error handling
-    agenda.define('github-analysis', {
+    agenda.define('github-analysis', { 
         concurrency: parseInt(process.env.DEFAULT_JOB_CONCURRENCY) || 2,
         lockLifetime: parseInt(process.env.JOB_LOCK_LIFETIME) || 600000
     }, async (job, done) => {
@@ -133,12 +108,12 @@ const defineJobProcessors = async () => {
         }
     });
 
-    agenda.define('document-summary', {
+    agenda.define('document-summary', { 
         concurrency: parseInt(process.env.DEFAULT_JOB_CONCURRENCY) || 3,
         lockLifetime: parseInt(process.env.JOB_LOCK_LIFETIME) || 600000
     }, async (job, done) => {
         try {
-            const result = await documentSummaryJob(job);
+           const result = await documentSummaryJob(job);
             job.attrs.result = result;
             done();
         } catch (error) {
@@ -147,12 +122,16 @@ const defineJobProcessors = async () => {
         }
     });
 
-    agenda.define('deep-research', {
-        concurrency: 1, // Keep at 1 for deep research due to complexity
-        lockLifetime: parseInt(process.env.JOB_LOCK_LIFETIME) || 3600000 // 1 hour for deep research
+    agenda.define('deep-research', { 
+        concurrency: 1,
+        lockLifetime: parseInt(process.env.JOB_LOCK_LIFETIME) || 3600000
     }, async (job, done) => {
         try {
-            logger.info('Deep research processor starting', { jobId: job.attrs._id });
+            logger.info('🔍 DEEP RESEARCH PROCESSOR INVOKED', { 
+                jobId: job.attrs._id,
+                topic: job.attrs.data?.topic,
+                timestamp: new Date()
+            });
             const result = await deepResearchJob(job);
             job.attrs.result = result;
             logger.info('Deep research processor completed', { jobId: job.attrs._id });
@@ -169,10 +148,20 @@ const defineJobProcessors = async () => {
 
     // Utility jobs
     agenda.define('cleanup-old-jobs', { concurrency: 1 }, cleanupOldJobs);
+    agenda.define('cleanup-finished-jobs', { concurrency: 1 }, cleanupFinishedJobs);
     agenda.define('system-health-check', { concurrency: 1 }, systemHealthCheck);
 
-    // Schedule recurring jobs
-    await scheduleRecurringJobs();
+    // CRITICAL: Start agenda using IIFE pattern from docs
+    (async function() {
+        await agenda.start();
+        logger.info('🟢 AgendaJS auto-processing STARTED', {
+            isRunning: agenda._isRunning,
+            processEvery: '10 seconds'
+        });
+
+        // Schedule recurring jobs after start
+        await scheduleRecurringJobs();
+    })();
 
     logger.info('All job processors defined successfully');
 };
@@ -181,6 +170,7 @@ const scheduleRecurringJobs = async () => {
     try {
         await agenda.every('0 2 * * *', 'cleanup-old-jobs');
         await agenda.every('5 minutes', 'system-health-check');
+        await agenda.every('1 hour', 'cleanup-finished-jobs');
         logger.info('Recurring jobs scheduled');
     } catch (error) {
         logger.error('Error scheduling recurring jobs:', error);
@@ -201,6 +191,7 @@ const createJob = async (jobType, jobData, options = {}) => {
         if (options.runAt) job.schedule(options.runAt);
 
         await job.save();
+        
         logger.info(`📋 Job saved to database, scheduled for: ${job.attrs.nextRunAt}`, {
             jobId: job.attrs._id,
             nextRunAt: job.attrs.nextRunAt,
@@ -236,7 +227,7 @@ const cancelJob = async (jobId) => {
 
 const getJobStatus = async (jobId) => {
     try {
-        const ObjectId = require('mongoose').Types.ObjectId;
+	const { ObjectId } = require('mongodb');
         const jobs = await agenda.jobs({ _id: new ObjectId(jobId) });
         return jobs.length > 0 ? jobs[0] : null;
     } catch (error) {
@@ -290,6 +281,7 @@ const cleanupOldJobs = async (job) => {
             ]
         });
 
+        const { getDatabase } = require('./database');
         const db = getDatabase();
         const result = await db.collection('job_metrics').deleteMany({
             started_at: { $lt: threeDaysAgo },
@@ -303,6 +295,22 @@ const cleanupOldJobs = async (job) => {
     }
 };
 
+const cleanupFinishedJobs = async (job) => {
+    try {
+        const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+        const numRemoved = await agenda.cancel({
+            $or: [
+                { lastFinishedAt: { $lt: twoHoursAgo } },
+                { failedAt: { $lt: twoHoursAgo } }
+            ]
+        });
+        logger.info(`Cleaned up ${numRemoved} finished jobs older than 2 hours`);
+    } catch (error) {
+        logger.error('Cleanup finished jobs error:', error);
+        throw error;
+    }
+};
+
 const systemHealthCheck = async (job) => {
     try {
         const { checkDatabaseHealth } = require('./database');
@@ -310,6 +318,7 @@ const systemHealthCheck = async (job) => {
 
         logger.info('System health check completed', { database: dbHealth.healthy });
 
+        const { getDatabase } = require('./database');
         const db = getDatabase();
         await db.collection('health_checks').insertOne({
             database: dbHealth,
@@ -344,4 +353,4 @@ module.exports = {
     listJobs,
     getAgenda,
     gracefulShutdown
-};
+}; 
