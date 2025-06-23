@@ -191,7 +191,9 @@ const cancelJob = async (jobId) => {
 
 const getJobStatus = async (jobId) => {
     try {
-        const jobs = await agenda.jobs({ _id: jobId });
+        // Convert string ID to ObjectId for MongoDB query
+        const ObjectId = require('mongoose').Types.ObjectId;
+        const jobs = await agenda.jobs({ _id: new ObjectId(jobId) });
         return jobs.length > 0 ? jobs[0] : null;
     } catch (error) {
         logger.error(`Error getting job status ${jobId}:`, error);
