@@ -5,6 +5,20 @@ const socketService = require('../services/socketService');
 
 const router = express.Router();
 
+router.post('/clear-all', async (req, res) => {
+    try {
+        const { getAgenda } = require('../config/agenda');
+        const agenda = getAgenda();
+
+        // Clear ALL jobs
+        const cleared = await agenda.cancel({});
+
+        res.json({ clearedJobs: cleared });
+    } catch (error) {
+        res.json({ error: error.message });
+    }
+});
+
 // Replace force-process endpoint
 router.get('/force-process', async (req, res) => {
     try {
