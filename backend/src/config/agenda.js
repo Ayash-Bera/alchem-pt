@@ -7,7 +7,7 @@ let agenda = null;
 const initializeAgenda = async () => {
     try {
         const db = getDatabase();
-        
+
         // Create agenda with proper configuration
         agenda = new Agenda({
             mongo: db,
@@ -27,7 +27,23 @@ const initializeAgenda = async () => {
 
         // Start agenda
         await agenda.start();
-        
+
+        agenda.on('processEvery', () => {
+            logger.debug('🔄 AgendaJS checking for jobs to process');
+        });
+
+        setInterval(() => {
+            if (agenda._isRunning) {
+                agenda._processEvery();
+            }
+        }, 5000);
+
+        logger.info('✅ AgendaJS is now ACTIVELY processing jobs', {
+            isRunning: agenda._isRunning,
+            processEvery: `${process.env.AGENDA_PROCESS_EVERY || 10000}ms`,
+            maxConcurrency: process.env.AGENDA_MAX_CONCURRENCY || 10
+        });
+
         logger.info('AgendaJS initialized successfully', {
             processEvery: `${process.env.AGENDA_PROCESS_EVERY || 10000}ms`,
             maxConcurrency: process.env.AGENDA_MAX_CONCURRENCY || 10,
@@ -99,11 +115,11 @@ const setupEventListeners = () => {
 const defineJobProcessors = async () => {
     // Import job processors
     const githubAnalysisJob = require('../jobs/githubAnalysisJob');
-    const documentSummaryJob = require('../jobs/documentSummaryJob'); 
+    const documentSummaryJob = require('../jobs/documentSummaryJob');
     const deepResearchJob = require('../jobs/deepResearchJob');
 
     // Define processors with error handling
-    agenda.define('github-analysis', { 
+    agenda.define('github-analysis', {
         concurrency: parseInt(process.env.DEFAULT_JOB_CONCURRENCY) || 2,
         lockLifetime: parseInt(process.env.JOB_LOCK_LIFETIME) || 600000
     }, async (job, done) => {
@@ -117,7 +133,7 @@ const defineJobProcessors = async () => {
         }
     });
 
-    agenda.define('document-summary', { 
+    agenda.define('document-summary', {
         concurrency: parseInt(process.env.DEFAULT_JOB_CONCURRENCY) || 3,
         lockLifetime: parseInt(process.env.JOB_LOCK_LIFETIME) || 600000
     }, async (job, done) => {
@@ -131,7 +147,7 @@ const defineJobProcessors = async () => {
         }
     });
 
-    agenda.define('deep-research', { 
+    agenda.define('deep-research', {
         concurrency: 1, // Keep at 1 for deep research due to complexity
         lockLifetime: parseInt(process.env.JOB_LOCK_LIFETIME) || 3600000 // 1 hour for deep research
     }, async (job, done) => {
@@ -185,6 +201,12 @@ const createJob = async (jobType, jobData, options = {}) => {
         if (options.runAt) job.schedule(options.runAt);
 
         await job.save();
+        logger.info(`📋 Job saved to database, scheduled for: ${job.attrs.nextRunAt}`, {
+            jobId: job.attrs._id,
+            nextRunAt: job.attrs.nextRunAt,
+            currentTime: new Date()
+        });
+
         await createJobMetrics(job.attrs._id, jobType, jobData);
 
         logger.info(`Job created: ${jobType}`, {
