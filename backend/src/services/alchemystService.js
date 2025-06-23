@@ -14,38 +14,124 @@ class AlchemystService {
 
     async generateAnalysis(prompt, options = {}) {
         try {
+            // Alchemyst API format (from their docs)
             const requestData = {
-                prompt,
-                max_tokens: options.maxTokens || 2000,
-                temperature: options.temperature || 0.3,
-                model: options.model || 'gpt-4',
-                stream: false
+                chat_history: [
+                    {
+                        content: prompt,
+                        role: "user"
+                    }
+                ],
+                persona: options.persona || "maya"
             };
 
+            // Add optional fields if provided
+            if (options.chatId) requestData.chatId = options.chatId;
+            if (options.scope) requestData.scope = options.scope;
+            if (options.tools) requestData.tools = options.tools;
+
             logger.info('Calling Alchemyst API for analysis generation');
-            const response = await axios.post(`${this.baseURL}/chat/completions`, requestData, {
+            logger.info('Request data:', {
+                url: `${this.baseURL}/chat/generate/stream`,
+                promptLength: prompt.length,
+                persona: requestData.persona
+            });
+
+            const response = await axios.post(`${this.baseURL}/chat/generate/stream`, requestData, {
                 headers: {
                     'Authorization': `Bearer ${this.apiKey}`,
                     'Content-Type': 'application/json'
                 },
-                timeout: this.defaultTimeout
+                timeout: this.defaultTimeout,
+                responseType: 'stream'
             });
 
-            const result = {
-                content: response.data.choices[0].message.content,
-                tokens: response.data.usage?.total_tokens || 0,
-                cost: this.calculateCost(response.data.usage),
-                model: response.data.model
-            };
+            // Handle Server-Sent Events (SSE) stream response
+            let finalContent = '';
+            let metadata = {};
+            let thinkingSteps = [];
 
-            logger.info('Alchemyst API call successful', {
-                tokens: result.tokens,
-                cost: result.cost
+            return new Promise((resolve, reject) => {
+                let buffer = '';
+
+                response.data.on('data', (chunk) => {
+                    buffer += chunk.toString();
+                    const lines = buffer.split('\n');
+
+                    // Keep the last incomplete line in buffer
+                    buffer = lines.pop() || '';
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const data = line.slice(6);
+
+                            if (data === '[DONE]') {
+                                logger.info('Stream completed');
+                                continue;
+                            }
+
+                            try {
+                                const parsed = JSON.parse(data);
+                                logger.debug('Received:', parsed);
+
+                                if (parsed.type === 'thinking_update') {
+                                    thinkingSteps.push(parsed.content);
+                                } else if (parsed.type === 'final_response') {
+                                    finalContent = parsed.content;
+                                } else if (parsed.type === 'metadata') {
+                                    metadata = parsed.content;
+                                }
+                            } catch (e) {
+                                // Handle parsing errors
+                                logger.debug('JSON parse error:', e.message);
+                            }
+                        }
+                    }
+                });
+
+                response.data.on('end', () => {
+                    if (!finalContent) {
+                        reject(new Error('No final response received from Alchemyst API'));
+                        return;
+                    }
+
+                    const result = {
+                        content: finalContent,
+                        tokens: metadata.tokens || this.estimateTokens(finalContent),
+                        cost: this.calculateCost({ total_tokens: metadata.tokens || this.estimateTokens(finalContent) }),
+                        metadata: metadata,
+                        thinkingSteps: thinkingSteps
+                    };
+
+                    logger.info('Alchemyst API call successful', {
+                        tokens: result.tokens,
+                        cost: result.cost,
+                        contentLength: finalContent.length,
+                        thinkingStepsCount: thinkingSteps.length
+                    });
+
+                    resolve(result);
+                });
+
+                response.data.on('error', (error) => {
+                    logger.error('Stream error:', error);
+                    reject(error);
+                });
+
+                // Add timeout for the stream
+                setTimeout(() => {
+                    reject(new Error('Stream timeout - no response received within timeout period'));
+                }, this.defaultTimeout);
             });
 
-            return result;
         } catch (error) {
-            logger.error('Alchemyst API call failed:', error.response?.data || error.message);
+            logger.error('Alchemyst API call failed:', {
+                message: error.message,
+                status: error.response?.status,
+                statusText: error.response?.statusText,
+                data: error.response?.data,
+                url: error.config?.url
+            });
 
             if (error.response?.status === 401) {
                 throw new Error('Invalid Alchemyst API key');
@@ -56,9 +142,17 @@ class AlchemystService {
             if (error.response?.status === 500) {
                 throw new Error('Alchemyst API service unavailable');
             }
+            if (error.response?.status === 400) {
+                throw new Error(`Alchemyst API bad request: ${JSON.stringify(error.response?.data)}`);
+            }
 
             throw new Error(`Alchemyst API error: ${error.message}`);
         }
+    }
+    // Helper method to estimate tokens when not provided
+    estimateTokens(text) {
+        // Rough estimation: ~4 characters per token
+        return Math.ceil(text.length / 4);
     }
 
     async generateSummary(text, options = {}) {
@@ -332,19 +426,47 @@ Current Step: ${step.name}
 
     async testConnection() {
         try {
-            const testPrompt = "Hello, please respond with 'API connection successful'";
-            const result = await this.generateAnalysis(testPrompt, {
-                maxTokens: 50,
-                temperature: 0
+            logger.info('Testing Alchemyst API connection...', {
+                baseURL: this.baseURL,
+                hasApiKey: !!this.apiKey,
+                fullUrl: `${this.baseURL}/chat/generate/stream`
             });
 
-            logger.info('Alchemyst API test successful:', {
-                response: result.content.substring(0, 100)
+            const testData = {
+                chat_history: [
+                    {
+                        content: "Hello, please respond with 'API connection successful'",
+                        role: "user"
+                    }
+                ],
+                persona: "maya"
+            };
+
+            logger.info('Sending request with correct format:', { testData });
+
+            const response = await axios.post(`${this.baseURL}/chat/generate/stream`, testData, {
+                headers: {
+                    'Authorization': `Bearer ${this.apiKey}`,
+                    'Content-Type': 'application/json'
+                },
+                timeout: 10000,
+                responseType: 'stream'
             });
-            return { success: true, response: result.content };
+
+            logger.info('API Response received:', {
+                status: response.status,
+                statusText: response.statusText,
+                contentType: response.headers['content-type']
+            });
+
+            return { success: true, response: 'Streaming response received - connection working!' };
         } catch (error) {
-            logger.error('Alchemyst API test failed:', error.message);
-            return { success: false, error: error.message };
+            logger.error('Alchemyst API test failed:', {
+                message: error.message,
+                status: error.response?.status,
+                data: error.response?.data
+            });
+            return { success: false, error: error.message, details: error.response?.data };
         }
     }
 }
