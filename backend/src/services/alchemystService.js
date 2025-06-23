@@ -12,9 +12,13 @@ class AlchemystService {
         }
     }
 
-    async generateAnalysis(prompt, options = {}) {
+    // In backend/src/services/alchemystService.js
+
+    async generateAnalysis(prompt, options = {}, retryCount = 0) {
+        const MAX_RETRIES = 3;
+        const RETRY_DELAY = 5000; // 5 seconds
+
         try {
-            // Alchemyst API format (from their docs)
             const requestData = {
                 chat_history: [
                     {
@@ -25,24 +29,18 @@ class AlchemystService {
                 persona: options.persona || "maya"
             };
 
-            // Add optional fields if provided
             if (options.chatId) requestData.chatId = options.chatId;
             if (options.scope) requestData.scope = options.scope;
             if (options.tools) requestData.tools = options.tools;
 
-            logger.info('Calling Alchemyst API for analysis generation');
-            logger.info('Request data:', {
-                url: `${this.baseURL}/chat/generate/stream`,
-                promptLength: prompt.length,
-                persona: requestData.persona
-            });
+            logger.info(`API call attempt ${retryCount + 1}/${MAX_RETRIES + 1}`);
 
             const response = await axios.post(`${this.baseURL}/chat/generate/stream`, requestData, {
                 headers: {
                     'Authorization': `Bearer ${this.apiKey}`,
                     'Content-Type': 'application/json'
                 },
-                timeout: 3000000,
+                timeout: 180000, // Reduced to 3 minutes
                 responseType: 'stream'
             });
 
@@ -53,12 +51,11 @@ class AlchemystService {
 
             return new Promise((resolve, reject) => {
                 let buffer = '';
+                let resolved = false;
 
                 response.data.on('data', (chunk) => {
                     buffer += chunk.toString();
                     const lines = buffer.split('\n');
-
-                    // Keep the last incomplete line in buffer
                     buffer = lines.pop() || '';
 
                     for (const line of lines) {
@@ -72,8 +69,6 @@ class AlchemystService {
 
                             try {
                                 const parsed = JSON.parse(data);
-                                logger.debug('Received:', parsed);
-
                                 if (parsed.type === 'thinking_update') {
                                     thinkingSteps.push(parsed.content);
                                 } else if (parsed.type === 'final_response') {
@@ -82,14 +77,16 @@ class AlchemystService {
                                     metadata = parsed.content;
                                 }
                             } catch (e) {
-                                // Handle parsing errors
-                                logger.debug('JSON parse error:', e.message);
+                                // Ignore JSON parse errors
                             }
                         }
                     }
                 });
 
                 response.data.on('end', () => {
+                    if (resolved) return;
+                    resolved = true;
+
                     if (!finalContent) {
                         reject(new Error('No final response received from Alchemyst API'));
                         return;
@@ -103,50 +100,55 @@ class AlchemystService {
                         thinkingSteps: thinkingSteps
                     };
 
-                    logger.info('Alchemyst API call successful', {
-                        tokens: result.tokens,
-                        cost: result.cost,
-                        contentLength: finalContent.length,
-                        thinkingStepsCount: thinkingSteps.length
-                    });
-
                     resolve(result);
                 });
 
                 response.data.on('error', (error) => {
-                    logger.error('Stream error:', error);
-                    reject(error);
+                    if (resolved) return;
+                    resolved = true;
+
+                    logger.error('Stream error:', error.message);
+
+                    // Check if we should retry
+                    if ((error.code === 'ECONNRESET' || error.message.includes('aborted')) && retryCount < MAX_RETRIES) {
+                        logger.info(`Connection reset, retrying in ${RETRY_DELAY}ms (attempt ${retryCount + 1})`);
+                        setTimeout(() => {
+                            this.generateAnalysis(prompt, options, retryCount + 1)
+                                .then(resolve)
+                                .catch(reject);
+                        }, RETRY_DELAY * (retryCount + 1)); // Exponential backoff
+                    } else {
+                        reject(error);
+                    }
                 });
 
-                // Add timeout for the stream
+                // Shorter timeout for individual requests
                 setTimeout(() => {
-                    reject(new Error('Stream timeout - no response received within timeout period'));
-                }, 300000);
+                    if (resolved) return;
+                    resolved = true;
+
+                    if (retryCount < MAX_RETRIES) {
+                        logger.warn(`Request timeout, retrying (attempt ${retryCount + 1})`);
+                        setTimeout(() => {
+                            this.generateAnalysis(prompt, options, retryCount + 1)
+                                .then(resolve)
+                                .catch(reject);
+                        }, RETRY_DELAY);
+                    } else {
+                        reject(new Error('Request timeout after all retries'));
+                    }
+                }, 180000); // 3 minutes
             });
 
         } catch (error) {
-            logger.error('Alchemyst API call failed:', {
-                message: error.message,
-                status: error.response?.status,
-                statusText: error.response?.statusText,
-                data: error.response?.data,
-                url: error.config?.url
-            });
-
-            if (error.response?.status === 401) {
-                throw new Error('Invalid Alchemyst API key');
-            }
-            if (error.response?.status === 429) {
-                throw new Error('Alchemyst API rate limit exceeded');
-            }
-            if (error.response?.status === 500) {
-                throw new Error('Alchemyst API service unavailable');
-            }
-            if (error.response?.status === 400) {
-                throw new Error(`Alchemyst API bad request: ${JSON.stringify(error.response?.data)}`);
+            if (retryCount < MAX_RETRIES && (error.code === 'ECONNRESET' || error.message.includes('timeout'))) {
+                logger.info(`Request failed, retrying in ${RETRY_DELAY}ms (attempt ${retryCount + 1})`);
+                await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * (retryCount + 1)));
+                return this.generateAnalysis(prompt, options, retryCount + 1);
             }
 
-            throw new Error(`Alchemyst API error: ${error.message}`);
+            logger.error('Alchemyst API call failed after retries:', error.message);
+            throw error;
         }
     }
     // Helper method to estimate tokens when not provided
