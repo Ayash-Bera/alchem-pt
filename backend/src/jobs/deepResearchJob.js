@@ -1025,17 +1025,435 @@ const detectDomain = (topic) => {
     return 'general';
 };
 
-// Stub functions for features we'll implement later
-const shouldReplanBasedOnFindings = (results, plan) => false; // Disable for testing
-const adaptRemainingSteps = async (groups, context, plan) => groups; // Return unchanged
-const handleExecutionError = async (error, group, context, plan) => ({ canContinue: false });
-const recoverFailedParallelSteps = async (failed, successful, context, plan) => [];
-const retryStepWithEnhancement = async (step, context, result) => null;
-const generateFallbackStepResult = async (step, context, error) => null;
-const assessContentCoherence = async (content, context) => 0.8;
-const detectNewConflicts = async (results, context) => [];
-const calculateQualityTrend = (results) => 'stable';
-const updateStepContext = async (context, result, plan) => context;
+// Quality Control Functions
+const retryStepWithEnhancement = async (step, context, result) => {
+    logger.info(`Retrying step ${step.number} with enhancement`);
+    
+    try {
+        // Analyze why the original failed
+        const failureReasons = analyzeStepFailure(result);
+        
+        // Create enhanced prompt with more context and clearer instructions
+        const enhancedPrompt = `
+ENHANCED RETRY - Step ${step.number}: ${step.name}
+
+PREVIOUS ATTEMPT ISSUES: ${failureReasons.join(', ')}
+
+ENHANCED REQUIREMENTS:
+- Provide specific, detailed analysis with concrete examples
+- Include quantitative data where possible
+- Structure response with clear headings and bullet points
+- Ensure factual accuracy and cite reasoning
+- Minimum 800 words for comprehensive coverage
+
+CONTEXT: ${JSON.stringify(context, null, 2)}
+
+STEP OBJECTIVE: ${step.description}
+
+Deliver high-quality, structured research that addresses the identified gaps.
+`;
+
+        // Retry with higher token allocation and temperature adjustment
+        const retryResult = await alchemystService.generateAnalysis(enhancedPrompt, {
+            maxTokens: Math.floor(step.estimatedTokens * 1.5),
+            temperature: 0.2 // Lower temperature for more focused output
+        });
+
+        logger.info(`Step ${step.number} retry successful`);
+        return retryResult;
+        
+    } catch (error) {
+        logger.error(`Step ${step.number} retry failed:`, error);
+        return null;
+    }
+};
+
+const generateFallbackStepResult = async (step, context, error) => {
+    logger.warn(`Generating fallback result for step ${step.number}`);
+    
+    try {
+        // Create simplified prompt for fallback
+        const fallbackPrompt = `
+FALLBACK MODE - Step ${step.number}: ${step.name}
+
+ISSUE: ${error.message}
+CONTEXT: Research topic: ${context.topic}
+
+Provide a basic analysis for this research step using general knowledge:
+- Key concepts and definitions
+- Common approaches in this area
+- General considerations and factors
+- Basic recommendations
+
+Keep response concise but informative (300-500 words).
+`;
+
+        const fallbackResult = await alchemystService.generateAnalysis(fallbackPrompt, {
+            maxTokens: 600,
+            temperature: 0.4
+        });
+
+        return {
+            stepNumber: step.number,
+            stepName: step.name + " (Fallback)",
+            description: step.description,
+            content: fallbackResult.content,
+            tokens: fallbackResult.tokens,
+            cost: fallbackResult.cost,
+            executionType: 'fallback',
+            quality: { score: 0.3, category: 'fallback' }, // Mark as lower quality
+            isFallback: true,
+            originalError: error.message,
+            completedAt: new Date()
+        };
+        
+    } catch (fallbackError) {
+        logger.error(`Fallback generation failed for step ${step.number}:`, fallbackError);
+        return null;
+    }
+};
+
+// Adaptive Intelligence Functions
+const shouldReplanBasedOnFindings = (results, plan) => {
+    if (results.length < 2) return false;
+    
+    // Check for significant quality degradation
+    const recentQuality = results.slice(-2).map(r => r.quality?.score || 0);
+    const avgRecentQuality = recentQuality.reduce((a, b) => a + b, 0) / recentQuality.length;
+    
+    if (avgRecentQuality < 0.4) {
+        logger.info('Replanning triggered: Quality degradation detected');
+        return true;
+    }
+    
+    // Check for unexpected research direction
+    const topicKeywords = plan.topic.toLowerCase().split(' ');
+    const recentContent = results.slice(-2).map(r => r.content.toLowerCase()).join(' ');
+    const keywordOverlap = topicKeywords.filter(keyword => 
+        recentContent.includes(keyword)
+    ).length / topicKeywords.length;
+    
+    if (keywordOverlap < 0.3) {
+        logger.info('Replanning triggered: Research direction drift detected');
+        return true;
+    }
+    
+    // Check for excessive conflicts
+    const conflicts = results.slice(-2).flatMap(r => r.conflictAreas || []);
+    if (conflicts.length > 3) {
+        logger.info('Replanning triggered: Too many conflicts detected');
+        return true;
+    }
+    
+    return false;
+};
+
+const adaptRemainingSteps = async (remainingGroups, context, plan) => {
+    logger.info('Adapting remaining research steps based on findings');
+    
+    try {
+        // Extract key insights from completed work
+        const completedInsights = context.cumulativeInsights || [];
+        const identifiedGaps = context.identifiedConflicts || [];
+        
+        // Create adaptation prompt
+        const adaptationPrompt = `
+RESEARCH ADAPTATION REQUIRED
+
+Original Topic: ${plan.topic}
+Completed Insights: ${completedInsights.slice(0, 10).join(', ')}
+Identified Issues: ${identifiedGaps.join(', ')}
+
+Current remaining research steps:
+${remainingGroups.map((group, i) => 
+    group.steps.map(step => `${i+1}. ${step.name}`).join('\n')
+).join('\n')}
+
+Please suggest 2-3 focused research steps that:
+1. Address identified gaps and conflicts
+2. Build on completed insights
+3. Provide practical, actionable conclusions
+
+Format as: Step Name | Brief Description | Focus Area
+`;
+
+        const adaptationResult = await alchemystService.generateAnalysis(adaptationPrompt, {
+            maxTokens: 800,
+            temperature: 0.3
+        });
+
+        // Parse adaptation suggestions and modify remaining groups
+        const adaptedSteps = parseAdaptationSuggestions(adaptationResult.content, plan);
+        
+        if (adaptedSteps.length > 0) {
+            logger.info(`Successfully adapted ${adaptedSteps.length} remaining steps`);
+            return [{
+                type: 'sequential',
+                steps: adaptedSteps
+            }];
+        }
+        
+    } catch (error) {
+        logger.error('Error adapting remaining steps:', error);
+    }
+    
+    // Return original groups if adaptation fails
+    return remainingGroups;
+};
+
+const detectNewConflicts = async (results, context) => {
+    const conflicts = [];
+    
+    // Simple keyword-based conflict detection
+    const conflictPairs = [
+        ['increase', 'decrease', 'reduction'],
+        ['positive', 'negative', 'harmful'],
+        ['effective', 'ineffective', 'failed'],
+        ['beneficial', 'detrimental', 'damaging'],
+        ['supports', 'contradicts', 'opposes'],
+        ['validates', 'invalidates', 'disproves']
+    ];
+    
+    const allContent = results.map(r => r.content.toLowerCase()).join(' ');
+    
+    conflictPairs.forEach(([positive, negative, alternative]) => {
+        const hasPositive = allContent.includes(positive);
+        const hasNegative = allContent.includes(negative) || allContent.includes(alternative);
+        
+        if (hasPositive && hasNegative) {
+            conflicts.push(`${positive} vs ${negative}`);
+        }
+    });
+    
+    // Check for numerical conflicts
+    const numbers = allContent.match(/\d+%|\$\d+|\d+\.\d+/g) || [];
+    if (numbers.length > 4) {
+        // Simple heuristic: if we have many numbers, there might be conflicting data
+        conflicts.push('numerical data inconsistencies');
+    }
+    
+    return conflicts;
+};
+
+// Error Recovery Functions
+const handleExecutionError = async (error, group, context, plan) => {
+    logger.error(`Handling execution error for group ${group.type}:`, error.message);
+    
+    try {
+        // Assess error severity
+        const errorSeverity = assessErrorSeverity(error);
+        
+        if (errorSeverity === 'low') {
+            // Try to continue with partial results
+            const partialResults = await generatePartialResults(group, context, plan);
+            return {
+                canContinue: true,
+                results: partialResults,
+                updatedContext: { ...context, hasPartialResults: true }
+            };
+        } else if (errorSeverity === 'medium') {
+            // Simplify the group and retry
+            const simplifiedGroup = simplifyExecutionGroup(group);
+            return {
+                canContinue: true,
+                results: [],
+                modifiedGroup: simplifiedGroup,
+                updatedContext: context
+            };
+        } else {
+            // High severity - cannot continue
+            return {
+                canContinue: false,
+                error: error.message
+            };
+        }
+        
+    } catch (recoveryError) {
+        logger.error('Error recovery failed:', recoveryError);
+        return { canContinue: false, error: recoveryError.message };
+    }
+};
+
+const recoverFailedParallelSteps = async (failedResults, successfulResults, context, plan) => {
+    logger.info(`Attempting to recover ${failedResults.length} failed parallel steps`);
+    
+    const recoveredResults = [];
+    
+    for (const failure of failedResults) {
+        try {
+            // Use successful results to provide context for failed step
+            const successContext = successfulResults.map(s => 
+                `${s.stepName}: ${s.content.substring(0, 200)}...`
+            ).join('\n');
+            
+            const recoveryPrompt = `
+PARALLEL STEP RECOVERY
+
+Failed Step: ${failure.stepNumber}
+Error: ${failure.error}
+
+Context from successful parallel steps:
+${successContext}
+
+Topic: ${context.topic}
+
+Provide a brief analysis for the failed step using the context from successful steps. Focus on complementary information that fills gaps.
+
+Keep response focused and concise (400-600 words).
+`;
+
+            const recoveryResult = await alchemystService.generateAnalysis(recoveryPrompt, {
+                maxTokens: 800,
+                temperature: 0.4
+            });
+
+            recoveredResults.push({
+                stepNumber: failure.stepNumber,
+                stepName: `Recovered Step ${failure.stepNumber}`,
+                description: 'Recovery from parallel execution failure',
+                content: recoveryResult.content,
+                tokens: recoveryResult.tokens,
+                cost: recoveryResult.cost,
+                executionType: 'recovery',
+                quality: { score: 0.5, category: 'recovered' },
+                isRecovered: true,
+                originalError: failure.error,
+                completedAt: new Date()
+            });
+            
+        } catch (recoveryError) {
+            logger.error(`Recovery failed for step ${failure.stepNumber}:`, recoveryError);
+        }
+    }
+    
+    logger.info(`Successfully recovered ${recoveredResults.length} out of ${failedResults.length} failed steps`);
+    return recoveredResults;
+};
+
+// Monitoring Functions
+const calculateQualityTrend = (results) => {
+    if (results.length < 2) return 'insufficient_data';
+    
+    const scores = results.map(r => r.quality?.score || 0.5);
+    const recent = scores.slice(-3);
+    const earlier = scores.slice(0, -3);
+    
+    if (earlier.length === 0) return 'stable';
+    
+    const recentAvg = recent.reduce((a, b) => a + b, 0) / recent.length;
+    const earlierAvg = earlier.reduce((a, b) => a + b, 0) / earlier.length;
+    
+    const difference = recentAvg - earlierAvg;
+    
+    if (difference > 0.15) return 'improving';
+    if (difference < -0.15) return 'declining';
+    return 'stable';
+};
+
+// Helper Functions
+const analyzeStepFailure = (result) => {
+    const failures = [];
+    
+    if (!result.content || result.content.length < 200) {
+        failures.push('insufficient content length');
+    }
+    
+    if (result.quality?.score < 0.3) {
+        failures.push('low information density');
+    }
+    
+    if (!result.content.includes('.') || result.content.split('.').length < 3) {
+        failures.push('lack of structure');
+    }
+    
+    return failures.length > 0 ? failures : ['general quality issues'];
+};
+
+const assessErrorSeverity = (error) => {
+    const message = error.message.toLowerCase();
+    
+    if (message.includes('timeout') || message.includes('rate limit')) {
+        return 'medium';
+    }
+    
+    if (message.includes('authentication') || message.includes('permission')) {
+        return 'high';
+    }
+    
+    if (message.includes('network') || message.includes('connection')) {
+        return 'medium';
+    }
+    
+    return 'low';
+};
+
+const generatePartialResults = async (group, context, plan) => {
+    // Generate simplified results for the group
+    const partialPrompt = `
+PARTIAL RESEARCH GENERATION
+
+Topic: ${context.topic}
+Failed group: ${group.type} with ${group.steps.length} steps
+
+Provide a consolidated analysis covering the main areas these steps would have addressed:
+${group.steps.map(s => `- ${s.name}`).join('\n')}
+
+Focus on key insights and general findings (600-800 words).
+`;
+
+    try {
+        const result = await alchemystService.generateAnalysis(partialPrompt, {
+            maxTokens: 1000,
+            temperature: 0.3
+        });
+
+        return [{
+            stepNumber: 'partial',
+            stepName: 'Partial Group Recovery',
+            content: result.content,
+            tokens: result.tokens,
+            cost: result.cost,
+            isPartial: true,
+            quality: { score: 0.4, category: 'partial' },
+            completedAt: new Date()
+        }];
+    } catch (error) {
+        logger.error('Partial result generation failed:', error);
+        return [];
+    }
+};
+
+const simplifyExecutionGroup = (group) => {
+    return {
+        type: 'sequential',
+        steps: group.steps.map(step => ({
+            ...step,
+            estimatedTokens: Math.floor(step.estimatedTokens * 0.7),
+            description: `Simplified: ${step.description.substring(0, 100)}...`
+        })).slice(0, 2) // Reduce to max 2 steps
+    };
+};
+
+const parseAdaptationSuggestions = (content, plan) => {
+    const lines = content.split('\n').filter(line => line.includes('|'));
+    const adaptedSteps = [];
+    
+    lines.forEach((line, index) => {
+        const parts = line.split('|').map(p => p.trim());
+        if (parts.length >= 2) {
+            adaptedSteps.push({
+                number: index + 1,
+                name: parts[0],
+                description: parts[1] || parts[0],
+                expectedOutput: 'Adaptive research analysis',
+                estimatedTokens: 1200,
+                canRunInParallel: false
+            });
+        }
+    });
+    
+    return adaptedSteps.slice(0, 3); // Limit to 3 adaptive steps
+};
 
 const buildStepContext = (previousResults, topic) => {
     if (previousResults.length === 0) {
