@@ -94,20 +94,32 @@ class JobService {
                 createdAt: new Date()
             };
 
-            // Validate required fields
             if (!jobData.topic) {
                 throw new Error('Research topic is required');
             }
 
-            const job = await createJob('deep-research', jobData, {
-                priority: data.priority || 'high', // Deep research gets higher priority
-                delay: data.delay
-            });
+            // Add timeout to job creation
+            const createJobWithTimeout = Promise.race([
+                createJob('deep-research', jobData, {
+                    priority: data.priority || 'high',
+                    delay: data.delay
+                }),
+                new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('Job creation timeout')), 5000)
+                )
+            ]);
 
-            await publishMessage(ROUTING_KEYS.DEEP_RESEARCH, {
-                jobId: job.attrs._id,
-                ...jobData
-            });
+            const job = await createJobWithTimeout;
+
+            // Skip RabbitMQ for now if it's causing issues
+            try {
+                await publishMessage(ROUTING_KEYS.DEEP_RESEARCH, {
+                    jobId: job.attrs._id,
+                    ...jobData
+                });
+            } catch (mqError) {
+                logger.warn('RabbitMQ publish failed, job will still be processed by Agenda:', mqError.message);
+            }
 
             logger.info('Deep research job created:', { jobId: job.attrs._id });
             return this.formatJobResponse(job);
@@ -116,6 +128,7 @@ class JobService {
             throw error;
         }
     }
+
 
     async getJob(jobId) {
         try {

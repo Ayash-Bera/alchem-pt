@@ -9,13 +9,22 @@ const deepResearchJob = async (job) => {
     logger.info(`Starting deep research job for topic: ${topic}`, { jobId, researchDepth });
 
     try {
-        // Update job progress
         job.progress(5);
         await job.save();
 
-        // Step 1: Research planning and methodology
-        const researchPlan = await createResearchPlan(topic, researchDepth, sources, deliverables);
-        job.progress(15);
+        // Simplified research plan
+        const researchPlan = {
+            topic,
+            depth: researchDepth || 'medium',
+            steps: [
+                { number: 1, name: 'Initial Research', description: 'Basic topic overview' },
+                { number: 2, name: 'Analysis', description: 'Detailed analysis' },
+                { number: 3, name: 'Synthesis', description: 'Combine findings' }
+            ],
+            createdAt: new Date()
+        };
+
+        job.progress(25);
         await job.save();
 
         // Step 2: Execute multi-step research process
@@ -73,6 +82,44 @@ const deepResearchJob = async (job) => {
         await updateJobCosts(jobId, null, error.message);
         throw error;
     }
+};
+
+const executeSimplifiedResearch = async (plan, job) => {
+    const results = [];
+    const progressIncrement = 40 / plan.steps.length; // 40% for execution
+    let currentProgress = 25;
+
+    for (const step of plan.steps) {
+        try {
+            logger.info(`Executing step: ${step.name}`);
+
+            const prompt = `Research ${plan.topic}. Focus on: ${step.description}. Provide a brief analysis.`;
+
+            const stepResult = await alchemystService.generateAnalysis(prompt, {
+                maxTokens: 500,
+                temperature: 0.3
+            });
+
+            results.push({
+                stepNumber: step.number,
+                stepName: step.name,
+                content: stepResult.content,
+                tokens: stepResult.tokens,
+                cost: stepResult.cost,
+                completedAt: new Date()
+            });
+
+            currentProgress += progressIncrement;
+            job.progress(currentProgress);
+            await job.save();
+
+        } catch (error) {
+            logger.error(`Step ${step.number} failed:`, error);
+            // Continue with other steps
+        }
+    }
+
+    return results;
 };
 
 const createResearchPlan = async (topic, depth, sources, deliverables) => {
@@ -311,11 +358,11 @@ const calculateOptimizedDuration = (steps, complexity) => {
     const baseTimePerStep = complexity.level === 'low' ? 30 : complexity.level === 'medium' ? 45 : 60;
     const parallelSteps = steps.filter(step => step.canRunInParallel).length;
     const sequentialSteps = steps.length - parallelSteps;
-    
+
     // Parallel steps take less total time
     const parallelTime = parallelSteps > 0 ? Math.max(baseTimePerStep, parallelSteps * baseTimePerStep * 0.6) : 0;
     const sequentialTime = sequentialSteps * baseTimePerStep;
-    
+
     return Math.floor(parallelTime + sequentialTime); // Total minutes
 };
 
