@@ -9,15 +9,15 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "cors": "^2.8.5",
-    "dotenv": "^16.3.1",
-    "socket.io": "^4.7.2",
     "agenda": "^4.3.0",
-    "mongoose": "^8.0.3",
     "amqplib": "^0.10.3",
     "axios": "^1.5.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
     "express-rate-limit": "^6.10.0",
+    "mongoose": "^8.16.0",
+    "socket.io": "^4.7.2",
     "winston": "^3.10.0"
   },
   "devDependencies": {
