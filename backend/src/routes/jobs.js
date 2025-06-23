@@ -5,6 +5,122 @@ const socketService = require('../services/socketService');
 
 const router = express.Router();
 
+// Replace force-process endpoint
+router.get('/force-process', async (req, res) => {
+    try {
+        const { getAgenda } = require('../config/agenda');
+        const agenda = getAgenda();
+        
+        // Get a waiting job and try to process it
+        const jobs = await agenda.jobs({ nextRunAt: { $lte: new Date() } });
+        
+        if (jobs.length > 0) {
+            const job = jobs[0];
+            console.log('Processing job manually:', job.attrs.name);
+            await job.run();
+        }
+        
+        res.json({ 
+            isRunning: agenda._isRunning,
+            processedJob: jobs.length > 0 ? jobs[0].attrs.name : 'none',
+            totalJobs: jobs.length
+        });
+    } catch (error) {
+        res.json({ error: error.message, stack: error.stack });
+    }
+});
+router.get('/agenda-debug', async (req, res) => {
+    try {
+        const { getAgenda } = require('../config/agenda');
+        const agenda = getAgenda();
+        
+        const stats = await agenda.jobs({});
+        res.json({
+            isRunning: agenda._isRunning,
+            jobCount: stats.length,
+            jobs: stats.map(j => ({
+                name: j.attrs.name,
+                status: j.attrs.lastFinishedAt ? 'finished' : j.attrs.lockedAt ? 'running' : 'waiting'
+            }))
+        });
+    } catch (error) {
+        res.json({ error: error.message, agendaAvailable: false });
+    }
+});
+
+// Add to backend/src/routes/jobs.js
+router.post('/force-restart', async (req, res) => {
+    try {
+        const { getAgenda } = require('../config/agenda');
+        const agenda = getAgenda();
+        
+        // Clear waiting jobs
+        await agenda.cancel({ name: 'deep-research' });
+        
+        // Force restart
+        await agenda.stop();
+        await agenda.start();
+        
+        res.json({ success: true, message: 'AgendaJS restarted, waiting jobs cleared' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+router.post('/run-one', async (req, res) => {
+    try {
+        const { getAgenda } = require('../config/agenda');
+        const agenda = getAgenda();
+        
+        // Get one scheduled job and force run it
+        const jobs = await agenda.jobs({nextRunAt: {$exists: true}}, {}, 1);
+        if (jobs.length > 0) {
+            await jobs[0].run();
+            res.json({ success: true, jobRan: jobs[0].attrs.name });
+        } else {
+            res.json({ error: 'No jobs to run' });
+        }
+    } catch (error) {
+        res.json({ error: error.message });
+    }
+});
+
+router.post('/run-deep-research', async (req, res) => {
+    try {
+        const { getAgenda } = require('../config/agenda');
+        const agenda = getAgenda();
+        
+        const jobs = await agenda.jobs({name: 'deep-research'}, {}, 1);
+        if (jobs.length > 0) {
+            await jobs[0].run();
+            res.json({ success: true, jobRan: 'deep-research' });
+        } else {
+            res.json({ error: 'No deep-research jobs found' });
+        }
+    } catch (error) {
+        res.json({ error: error.message, stack: error.stack });
+    }
+});
+// Add this at the very top, right after the router definition
+router.get('/agenda-status', async (req, res) => {
+    try {
+        const { getAgenda } = require('../config/agenda');
+        const agenda = getAgenda();
+        
+        const runningJobs = await agenda.jobs({lockedAt: {$exists: true}});
+        const scheduledJobs = await agenda.jobs({nextRunAt: {$exists: true}, lockedAt: {$exists: false}});
+        
+        res.json({
+            isRunning: !!agenda._collection,
+            runningJobs: runningJobs.length,
+            scheduledJobs: scheduledJobs.length,
+            totalJobs: await agenda.jobs({}).length
+        });
+    } catch (error) {
+        res.json({ error: error.message });
+    }
+});
+
 // Create a new job
 router.post('/', async (req, res) => {
     try {

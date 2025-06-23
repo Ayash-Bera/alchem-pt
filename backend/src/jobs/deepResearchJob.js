@@ -9,26 +9,36 @@ const deepResearchJob = async (job) => {
     logger.info(`Starting deep research job for topic: ${topic}`, { jobId, researchDepth });
 
     try {
-        job.progress(5);
+	job.attrs.progress = 5;
         await job.save();
 
         // Step 1: Create intelligent research plan
+        logger.info('Creating research plan...', { jobId });
         const researchPlan = await createResearchPlan(topic, researchDepth, sources || [], deliverables || ['summary']);
-        job.progress(25);
+        logger.info('Research plan created successfully', { jobId, stepCount: researchPlan.steps?.length });
+
+	job.attrs.progress = 25;
         await job.save();
 
         // Step 2: Execute with our new intelligent system
+        logger.info('Executing research plan...', { jobId });
         const researchResults = await executeResearchPlan(researchPlan, job);
-        job.progress(70);
+        logger.info('Research execution completed', { jobId, resultCount: researchResults.length });
+
+	job.attrs.progress = 70;
         await job.save();
 
         // Continue with synthesis...
+        logger.info('Synthesizing findings...', { jobId });
         const synthesis = await synthesizeFindings(researchResults, deliverables || ['summary']);
-        job.progress(85);
+
+	job.attrs.progress = 85;
         await job.save();
 
+        logger.info('Generating final deliverables...', { jobId });
         const finalReport = await generateResearchDeliverables(topic, researchResults, synthesis, deliverables || ['summary']);
-        job.progress(95);
+
+	job.attrs.progress = 95;
         await job.save();
 
         const result = {
@@ -46,7 +56,7 @@ const deepResearchJob = async (job) => {
             }
         };
 
-        job.progress(100);
+	job.attrs.progress = 100;
         await job.save();
 
         const totalCosts = calculateTotalCosts(researchResults, synthesis, finalReport);
@@ -56,7 +66,13 @@ const deepResearchJob = async (job) => {
         return result;
 
     } catch (error) {
-        logger.error(`Deep research failed for topic: ${topic}`, { jobId, error: error.message });
+        logger.error(`Deep research failed for topic: ${topic}`, {
+            jobId,
+            errorMessage: error.message,
+            errorStack: error.stack,
+            errorName: error.name,
+            fullError: JSON.stringify(error, Object.getOwnPropertyNames(error))
+        });
         await updateJobCosts(jobId, null, error.message);
         throw error;
     }
@@ -64,29 +80,62 @@ const deepResearchJob = async (job) => {
 
 const createResearchPlan = async (topic, depth, sources, deliverables) => {
     try {
+        logger.info('Starting research plan creation', { topic, depth });
+
         // Step 1: Analyze topic complexity for cost optimization
+        logger.info('Analyzing topic complexity...');
         const complexity = await analyzeTopicComplexity(topic, depth);
+        logger.info('Topic complexity analyzed', { complexity });
 
         // Step 2: Calculate optimal token distribution
+        logger.info('Calculating token distribution...');
         const tokenBudget = calculateOptimalTokenDistribution(depth, complexity);
+        logger.info('Token budget calculated', { tokenBudget });
 
         // Step 3: Generate cost-effective planning prompt
+        logger.info('Creating planning prompt...');
         const planningPrompt = createCostEffectivePlanningPrompt(topic, depth, sources, deliverables, complexity);
+        logger.info('Planning prompt created', { promptLength: planningPrompt.length });
 
         // Step 4: Make single API call for entire plan (cost optimization)
-        const planResult = await alchemystService.generateAnalysis(planningPrompt, {
-            maxTokens: tokenBudget.planning,
-            temperature: 0.2 // Lower temperature for consistent planning
-        });
+        logger.info('Calling Alchemyst API for plan generation...');
+        let planResult;
+        try {
+            planResult = await alchemystService.generateAnalysis(planningPrompt, {
+                maxTokens: tokenBudget.planning,
+                temperature: 0.2
+            });
+            logger.info('Alchemyst API call successful', {
+                contentLength: planResult.content?.length,
+                tokens: planResult.tokens,
+                cost: planResult.cost
+            });
+        } catch (apiError) {
+            logger.error('Alchemyst API call failed:', {
+                errorMessage: apiError.message,
+                errorStack: apiError.stack,
+                errorName: apiError.name,
+                apiUrl: process.env.ALCHEMYST_API_URL,
+                hasApiKey: !!process.env.ALCHEMYST_API_KEY
+            });
+            throw new Error(`API call failed: ${apiError.message || 'Unknown API error'}`);
+        }
 
         // Step 5: Parse and optimize the research steps
+        logger.info('Parsing research steps...');
         const rawSteps = parseResearchSteps(planResult.content, depth, tokenBudget);
+        logger.info('Research steps parsed', { stepCount: rawSteps.length });
 
         // Step 6: Identify parallelizable steps for concurrency
         const optimizedSteps = identifyParallelizableSteps(rawSteps, complexity);
 
         // Step 7: Estimate total costs
         const costEstimate = estimateStepCosts(optimizedSteps, tokenBudget);
+
+        logger.info('Research plan created successfully', {
+            stepCount: optimizedSteps.length,
+            estimatedCost: costEstimate.totalEstimatedCost
+        });
 
         return {
             topic,
@@ -104,29 +153,55 @@ const createResearchPlan = async (topic, depth, sources, deliverables) => {
             planningCost: planResult.cost
         };
     } catch (error) {
-        logger.error('Error creating cost-optimized research plan:', error);
-        throw new Error(`Research planning failed: ${error.message}`);
+        logger.error('Error creating cost-optimized research plan:', {
+            errorMessage: error.message,
+            errorStack: error.stack,
+            errorName: error.name,
+            topic,
+            depth,
+            fullError: JSON.stringify(error, Object.getOwnPropertyNames(error))
+        });
+        throw new Error(`Research planning failed: ${error.message || 'Unknown planning error'}`);
     }
 };
 
 // Cost and complexity analysis
 const analyzeTopicComplexity = async (topic, depth) => {
-    const factors = {
-        topicLength: topic.length,
-        technicalTerms: (topic.match(/\b(algorithm|system|framework|methodology|analysis|research|development)\b/gi) || []).length,
-        domainSpecific: detectDomain(topic),
-        depthMultiplier: depth === 'shallow' ? 0.5 : depth === 'medium' ? 1.0 : 1.8
-    };
+    try {
+        logger.info('Analyzing topic complexity', { topic, depth });
 
-    const complexityScore = (factors.topicLength / 100) +
-        (factors.technicalTerms * 2) +
-        (factors.depthMultiplier * 3);
+        const factors = {
+            topicLength: topic.length,
+            technicalTerms: (topic.match(/\b(algorithm|system|framework|methodology|analysis|research|development)\b/gi) || []).length,
+            domainSpecific: detectDomain(topic),
+            depthMultiplier: depth === 'shallow' ? 0.5 : depth === 'medium' ? 1.0 : 1.8
+        };
 
-    return {
-        level: complexityScore < 5 ? 'low' : complexityScore < 10 ? 'medium' : 'high',
-        score: complexityScore,
-        factors
-    };
+        const complexityScore = (factors.topicLength / 100) +
+            (factors.technicalTerms * 2) +
+            (factors.depthMultiplier * 3);
+
+        const result = {
+            level: complexityScore < 5 ? 'low' : complexityScore < 10 ? 'medium' : 'high',
+            score: complexityScore,
+            factors
+        };
+
+        logger.info('Topic complexity analysis complete', result);
+        return result;
+    } catch (error) {
+        logger.error('Error in analyzeTopicComplexity:', {
+            errorMessage: error.message,
+            topic,
+            depth
+        });
+        // Return default complexity to prevent failure
+        return {
+            level: 'medium',
+            score: 5,
+            factors: { topicLength: topic.length, technicalTerms: 0, domainSpecific: 'general', depthMultiplier: 1.0 }
+        };
+    }
 };
 
 // Smart token budget allocation
@@ -395,7 +470,7 @@ const executeResearchPlan = async (plan, job) => {
 
             // Update progress
             currentProgress += (group.steps.length * progressIncrement);
-            job.progress(Math.min(currentProgress, 70));
+            job.attrs.progress=(Math.min(currentProgress, 70));
             await job.save();
 
         } catch (error) {
@@ -854,13 +929,13 @@ const assessContentStructure = (content) => {
     const hasBullets = /(?:^|\n)[-*•]/m.test(content);
     const hasNumbers = /\d+\.?\s/.test(content);
     const paragraphs = content.split('\n\n').length;
-    
+
     let score = 0;
     if (hasHeaders) score += 0.3;
     if (hasBullets) score += 0.2;
     if (hasNumbers) score += 0.2;
     if (paragraphs > 2) score += 0.3;
-    
+
     return Math.min(1.0, score);
 };
 
@@ -874,7 +949,7 @@ const countFactualIndicators = (content) => {
         /studies indicate/gi,
         /data reveals/gi
     ];
-    
+
     return indicators.reduce((count, pattern) => {
         const matches = content.match(pattern);
         return count + (matches ? matches.length : 0);
@@ -898,7 +973,7 @@ const extractStepFocusArea = (description) => {
         'comparison': 'comparative',
         'synthesis': 'integrative'
     };
-    
+
     const descLower = description.toLowerCase();
     for (const [keyword, focus] of Object.entries(focusKeywords)) {
         if (descLower.includes(keyword)) return focus;
@@ -914,16 +989,16 @@ const identifyPotentialConflicts = (results) => {
         ['effective', 'ineffective'],
         ['beneficial', 'harmful']
     ];
-    
+
     const conflicts = [];
     const allContent = results.map(r => r.content.toLowerCase()).join(' ');
-    
+
     conflictPairs.forEach(([word1, word2]) => {
         if (allContent.includes(word1) && allContent.includes(word2)) {
             conflicts.push(`${word1} vs ${word2}`);
         }
     });
-    
+
     return conflicts;
 };
 
