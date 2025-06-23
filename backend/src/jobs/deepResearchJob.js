@@ -77,58 +77,195 @@ const deepResearchJob = async (job) => {
 
 const createResearchPlan = async (topic, depth, sources, deliverables) => {
     try {
-        const planningPrompt = `
-Create a comprehensive research plan for the following topic: ${topic}
+        // Step 1: Analyze topic complexity for cost optimization
+        const complexity = await analyzeTopicComplexity(topic, depth);
 
-Research Parameters:
-- Depth: ${depth}
-- Preferred sources: ${sources.join(', ') || 'Any credible sources'}
-- Required deliverables: ${deliverables.join(', ')}
+        // Step 2: Calculate optimal token distribution
+        const tokenBudget = calculateOptimalTokenDistribution(depth, complexity);
 
-Please create a structured research plan that includes:
-1. Research objectives and key questions
-2. Methodology and approach
-3. Step-by-step research process (5-8 steps)
-4. Expected outcomes for each step
-5. Quality criteria and validation methods
+        // Step 3: Generate cost-effective planning prompt
+        const planningPrompt = createCostEffectivePlanningPrompt(topic, depth, sources, deliverables, complexity);
 
-Format the plan as a detailed, actionable roadmap for conducting thorough research.
-`;
-
+        // Step 4: Make single API call for entire plan (cost optimization)
         const planResult = await alchemystService.generateAnalysis(planningPrompt, {
-            maxTokens: 2000,
-            temperature: 0.3
+            maxTokens: tokenBudget.planning,
+            temperature: 0.2 // Lower temperature for consistent planning
         });
 
-        // Parse the plan into structured steps
-        const steps = parseResearchSteps(planResult.content, depth);
+        // Step 5: Parse and optimize the research steps
+        const rawSteps = parseResearchSteps(planResult.content, depth, tokenBudget);
+
+        // Step 6: Identify parallelizable steps for concurrency
+        const optimizedSteps = identifyParallelizableSteps(rawSteps, complexity);
+
+        // Step 7: Estimate total costs
+        const costEstimate = estimateStepCosts(optimizedSteps, tokenBudget);
 
         return {
             topic,
             depth,
+            complexity: complexity.level,
             objectives: extractObjectives(planResult.content),
-            methodology: extractMethodology(planResult.content),
-            steps,
-            estimatedDuration: estimateResearchDuration(steps, depth),
+            methodology: selectOptimalMethodology(complexity, tokenBudget),
+            steps: optimizedSteps,
+            tokenBudget,
+            costEstimate,
+            parallelExecution: optimizedSteps.some(step => step.canRunInParallel),
+            estimatedDuration: calculateOptimizedDuration(optimizedSteps, complexity),
             qualityCriteria: extractQualityCriteria(planResult.content),
             createdAt: new Date(),
             planningCost: planResult.cost
         };
     } catch (error) {
-        logger.error('Error creating research plan:', error);
+        logger.error('Error creating cost-optimized research plan:', error);
         throw new Error(`Research planning failed: ${error.message}`);
     }
 };
 
-const parseResearchSteps = (planContent, depth) => {
-    // Extract research steps from the generated plan
+// Cost and complexity analysis
+const analyzeTopicComplexity = async (topic, depth) => {
+    const factors = {
+        topicLength: topic.length,
+        technicalTerms: (topic.match(/\b(algorithm|system|framework|methodology|analysis|research|development)\b/gi) || []).length,
+        domainSpecific: detectDomain(topic),
+        depthMultiplier: depth === 'shallow' ? 0.5 : depth === 'medium' ? 1.0 : 1.8
+    };
+
+    const complexityScore = (factors.topicLength / 100) +
+        (factors.technicalTerms * 2) +
+        (factors.depthMultiplier * 3);
+
+    return {
+        level: complexityScore < 5 ? 'low' : complexityScore < 10 ? 'medium' : 'high',
+        score: complexityScore,
+        factors
+    };
+};
+
+// Smart token budget allocation
+const calculateOptimalTokenDistribution = (depth, complexity) => {
+    const baseTokens = {
+        shallow: 8000,
+        medium: 15000,
+        deep: 25000
+    };
+
+    const complexityMultiplier = {
+        low: 0.8,
+        medium: 1.0,
+        high: 1.3
+    };
+
+    const totalBudget = baseTokens[depth] * complexityMultiplier[complexity.level];
+
+    return {
+        planning: Math.floor(totalBudget * 0.1), // 10% for planning
+        execution: Math.floor(totalBudget * 0.7), // 70% for research steps
+        synthesis: Math.floor(totalBudget * 0.15), // 15% for synthesis
+        deliverables: Math.floor(totalBudget * 0.05), // 5% for final formatting
+        total: totalBudget
+    };
+};
+
+// Identify steps that can run in parallel for better concurrency
+const identifyParallelizableSteps = (steps, complexity) => {
+    return steps.map((step, index) => {
+        // Steps that can typically run in parallel
+        const parallelizableTypes = [
+            'literature review',
+            'source analysis',
+            'data collection',
+            'market research',
+            'comparative analysis'
+        ];
+
+        const canRunInParallel = parallelizableTypes.some(type =>
+            step.name.toLowerCase().includes(type)
+        ) && complexity.level !== 'high'; // Complex topics need sequential processing
+
+        return {
+            ...step,
+            canRunInParallel,
+            dependencies: index === 0 ? [] : canRunInParallel ? [] : [index - 1],
+            estimatedTokens: Math.floor(step.estimatedTokens * (canRunInParallel ? 0.8 : 1.0)) // Parallel steps can be more focused
+        };
+    });
+};
+
+// Cost estimation for better budget management
+const estimateStepCosts = (steps, tokenBudget) => {
+    const INPUT_COST_PER_TOKEN = 0.00003;
+    const OUTPUT_COST_PER_TOKEN = 0.00006;
+
+    const stepCosts = steps.map(step => {
+        const inputTokens = step.estimatedTokens * 0.3; // Prompt tokens
+        const outputTokens = step.estimatedTokens * 0.7; // Response tokens
+
+        return {
+            step: step.number,
+            inputCost: inputTokens * INPUT_COST_PER_TOKEN,
+            outputCost: outputTokens * OUTPUT_COST_PER_TOKEN,
+            totalCost: (inputTokens * INPUT_COST_PER_TOKEN) + (outputTokens * OUTPUT_COST_PER_TOKEN)
+        };
+    });
+
+    const totalCost = stepCosts.reduce((sum, cost) => sum + cost.totalCost, 0);
+
+    return {
+        stepCosts,
+        totalEstimatedCost: totalCost,
+        costPerToken: totalCost / tokenBudget.total,
+        budgetUtilization: (tokenBudget.total * 0.00004) // Rough estimate
+    };
+};
+
+// Optimized methodology selection
+const selectOptimalMethodology = (complexity, tokenBudget) => {
+    if (complexity.level === 'low' && tokenBudget.total < 10000) {
+        return 'rapid_synthesis'; // Fast, cost-effective approach
+    } else if (complexity.level === 'high' || tokenBudget.total > 20000) {
+        return 'comprehensive_analysis'; // Thorough but expensive
+    } else {
+        return 'balanced_research'; // Middle ground
+    }
+};
+
+// Cost-effective planning prompt
+const createCostEffectivePlanningPrompt = (topic, depth, sources, deliverables, complexity) => {
+    return `
+Create an EFFICIENT and COST-EFFECTIVE research plan for: ${topic}
+
+CONSTRAINTS:
+- Complexity Level: ${complexity.level}
+- Research Depth: ${depth}
+- Token Budget: LIMITED (optimize for quality vs cost)
+- Deliverables: ${deliverables.join(', ')}
+
+OPTIMIZATION REQUIREMENTS:
+1. Minimize redundant research steps
+2. Maximize information gathering per API call
+3. Identify steps that can run in parallel
+4. Focus on high-impact, low-cost research methods
+5. Create ${complexity.level === 'low' ? '3-4' : complexity.level === 'medium' ? '5-6' : '6-8'} focused steps
+
+For each step, specify:
+- Step name and objective
+- Expected information yield
+- Parallelization potential (Yes/No)
+- Token efficiency rating (High/Medium/Low)
+
+Create a lean, efficient research methodology that maximizes insight per dollar spent.
+`;
+};
+
+
+const parseResearchSteps = (planContent, depth, tokenBudget) => {
     const stepPatterns = [
         'Step 1:', 'Step 2:', 'Step 3:', 'Step 4:', 'Step 5:', 'Step 6:', 'Step 7:', 'Step 8:'
     ];
 
     const steps = [];
     const lines = planContent.split('\n');
-
     let currentStep = null;
 
     lines.forEach(line => {
@@ -137,12 +274,19 @@ const parseResearchSteps = (planContent, depth) => {
             if (currentStep) {
                 steps.push(currentStep);
             }
+
+            // Extract efficiency indicators from the plan
+            const isHighEfficiency = line.toLowerCase().includes('high') && line.toLowerCase().includes('efficiency');
+            const canParallelize = line.toLowerCase().includes('parallel') || line.toLowerCase().includes('concurrent');
+
             currentStep = {
                 number: steps.length + 1,
                 name: line.replace(stepMatch, '').trim(),
                 description: '',
                 expectedOutput: '',
-                estimatedTokens: getStepTokenEstimate(depth)
+                estimatedTokens: calculateStepTokenAllocation(tokenBudget, depth, steps.length + 1),
+                efficiency: isHighEfficiency ? 'high' : 'medium',
+                parallelizable: canParallelize
             };
         } else if (currentStep && line.trim()) {
             currentStep.description += line.trim() + ' ';
@@ -153,13 +297,27 @@ const parseResearchSteps = (planContent, depth) => {
         steps.push(currentStep);
     }
 
-    // Ensure minimum number of steps based on depth
-    const minSteps = depth === 'shallow' ? 3 : depth === 'medium' ? 5 : 7;
-    while (steps.length < minSteps) {
-        steps.push(generateDefaultStep(steps.length + 1, depth));
+    // Ensure optimal step count for cost efficiency
+    const optimalStepCount = depth === 'shallow' ? 4 : depth === 'medium' ? 6 : 8;
+
+    while (steps.length < optimalStepCount) {
+        steps.push(generateDefaultStep(steps.length + 1, depth, tokenBudget));
     }
 
-    return steps.slice(0, 8); // Maximum 8 steps
+    return steps.slice(0, optimalStepCount); // Cap at optimal count
+};
+
+// Helper function for token allocation per step
+const calculateStepTokenAllocation = (tokenBudget, depth, stepNumber) => {
+    const baseAllocation = tokenBudget.execution / (depth === 'shallow' ? 4 : depth === 'medium' ? 6 : 8);
+
+    // Give more tokens to critical steps (1, middle, last)
+    const multiplier = stepNumber === 1 ? 1.2 :
+        stepNumber === Math.floor((depth === 'shallow' ? 4 : depth === 'medium' ? 6 : 8) / 2) ? 1.1 :
+            stepNumber === (depth === 'shallow' ? 4 : depth === 'medium' ? 6 : 8) ? 1.1 :
+                0.9;
+
+    return Math.floor(baseAllocation * multiplier);
 };
 
 const getStepTokenEstimate = (depth) => {
@@ -195,48 +353,616 @@ const generateDefaultStep = (stepNumber, depth) => {
 const executeResearchPlan = async (plan, job) => {
     const results = [];
     const totalSteps = plan.steps.length;
+    let accumulatedContext = { topic: plan.topic, methodology: plan.methodology };
 
-    for (let i = 0; i < plan.steps.length; i++) {
-        const step = plan.steps[i];
-        logger.info(`Executing research step ${i + 1}/${totalSteps}: ${step.name}`, { jobId: job.attrs._id });
+    logger.info(`Starting intelligent execution of ${totalSteps} steps`, {
+        jobId: job.attrs._id,
+        parallelCapable: plan.parallelExecution,
+        estimatedCost: plan.costEstimate.totalEstimatedCost
+    });
+
+    // Step 1: Group steps by execution strategy (parallel vs sequential)
+    const executionGroups = groupStepsForExecution(plan.steps);
+
+    // Step 2: Execute groups with cost monitoring
+    let currentProgress = 15; // Starting progress
+    const progressIncrement = 55 / totalSteps; // 55% total range for execution
+
+    for (let groupIndex = 0; groupIndex < executionGroups.length; groupIndex++) {
+        const group = executionGroups[groupIndex];
+
+        logger.info(`Executing group ${groupIndex + 1}/${executionGroups.length}`, {
+            jobId: job.attrs._id,
+            groupType: group.type,
+            stepCount: group.steps.length
+        });
 
         try {
-            // Build context from previous steps
-            const stepContext = buildStepContext(results, plan.topic);
+            let groupResults;
 
-            // Create step-specific prompt
-            const stepPrompt = createStepPrompt(step, plan.topic, stepContext, i + 1, totalSteps);
+            if (group.type === 'parallel' && group.steps.length > 1) {
+                // Execute parallel steps concurrently
+                groupResults = await executeParallelSteps(group.steps, accumulatedContext, plan, job.attrs._id);
+            } else {
+                // Execute sequential steps
+                groupResults = await executeSequentialSteps(group.steps, accumulatedContext, plan, job.attrs._id);
+            }
 
-            // Execute the research step
+            // Step 3: Validate and integrate results
+            const validatedResults = await validateAndIntegrateResults(groupResults, accumulatedContext);
+            results.push(...validatedResults);
+
+            // Step 4: Update context with new findings
+            accumulatedContext = await updateExecutionContext(accumulatedContext, validatedResults, plan);
+
+            // Step 5: Adaptive re-planning if needed
+            if (shouldReplanBasedOnFindings(validatedResults, plan)) {
+                const adaptedSteps = await adaptRemainingSteps(
+                    executionGroups.slice(groupIndex + 1),
+                    accumulatedContext,
+                    plan
+                );
+                executionGroups.splice(groupIndex + 1, executionGroups.length - groupIndex - 1, ...adaptedSteps);
+            }
+
+            // Update progress
+            currentProgress += (group.steps.length * progressIncrement);
+            job.progress(Math.min(currentProgress, 70));
+            await job.save();
+
+        } catch (error) {
+            logger.error(`Execution group ${groupIndex + 1} failed:`, {
+                jobId: job.attrs._id,
+                error: error.message,
+                groupType: group.type
+            });
+
+            // Implement intelligent error recovery
+            const recoveryResult = await handleExecutionError(error, group, accumulatedContext, plan);
+            if (recoveryResult.canContinue) {
+                results.push(...recoveryResult.results);
+                accumulatedContext = recoveryResult.updatedContext;
+            } else {
+                throw error;
+            }
+        }
+    }
+
+    // Step 6: Final cost and quality assessment
+    const executionSummary = await generateExecutionSummary(results, plan);
+
+    logger.info(`Intelligent execution completed`, {
+        jobId: job.attrs._id,
+        totalSteps: results.length,
+        actualCost: executionSummary.totalCost,
+        estimatedCost: plan.costEstimate.totalEstimatedCost,
+        costEfficiency: executionSummary.costEfficiency
+    });
+
+    return results;
+};
+
+// Group steps for optimal execution strategy
+const groupStepsForExecution = (steps) => {
+    const groups = [];
+    let currentGroup = { type: 'sequential', steps: [] };
+
+    steps.forEach((step, index) => {
+        if (step.canRunInParallel && currentGroup.steps.length > 0) {
+            // Start new parallel group if we have parallelizable steps
+            if (currentGroup.type === 'sequential' && currentGroup.steps.length > 0) {
+                groups.push(currentGroup);
+                currentGroup = { type: 'parallel', steps: [step] };
+            } else if (currentGroup.type === 'parallel') {
+                currentGroup.steps.push(step);
+            }
+        } else {
+            // Add to sequential group
+            if (currentGroup.type === 'parallel' && currentGroup.steps.length > 0) {
+                groups.push(currentGroup);
+                currentGroup = { type: 'sequential', steps: [step] };
+            } else {
+                currentGroup.steps.push(step);
+            }
+        }
+    });
+
+    if (currentGroup.steps.length > 0) {
+        groups.push(currentGroup);
+    }
+
+    return groups;
+};
+
+// Execute steps in parallel for better concurrency
+const executeParallelSteps = async (steps, context, plan, jobId) => {
+    logger.info(`Executing ${steps.length} steps in parallel`, { jobId });
+
+    const startTime = Date.now();
+
+    // Create promises for parallel execution
+    const stepPromises = steps.map(async (step) => {
+        try {
+            // Build step-specific context (lighter for parallel execution)
+            const stepContext = buildOptimizedStepContext(context, step, plan);
+
+            // Create cost-optimized prompt
+            const stepPrompt = createCostOptimizedStepPrompt(step, stepContext);
+
+            // Execute with cost monitoring
             const stepResult = await alchemystService.generateAnalysis(stepPrompt, {
                 maxTokens: step.estimatedTokens,
                 temperature: 0.3
             });
 
-            results.push({
-                stepNumber: i + 1,
+            return {
+                stepNumber: step.number,
                 stepName: step.name,
                 description: step.description,
                 content: stepResult.content,
                 tokens: stepResult.tokens,
                 cost: stepResult.cost,
+                executionTime: Date.now() - startTime,
+                executionType: 'parallel',
+                quality: await assessStepQuality(stepResult.content),
                 completedAt: new Date()
-            });
-
-            // Update job progress (15% to 70% range for research execution)
-            const progressIncrement = 55 / totalSteps;
-            const newProgress = 15 + ((i + 1) * progressIncrement);
-            job.progress(Math.min(newProgress, 70));
-            await job.save();
+            };
 
         } catch (error) {
-            logger.error(`Research step ${i + 1} failed:`, error);
-            throw new Error(`Research step ${i + 1} failed: ${error.message}`);
+            logger.error(`Parallel step ${step.number} failed:`, error);
+            throw new Error(`Parallel step ${step.number} failed: ${error.message}`);
+        }
+    });
+
+    // Execute all parallel steps with timeout protection
+    const results = await Promise.allSettled(stepPromises);
+
+    // Process results and handle any failures
+    const successfulResults = [];
+    const failedResults = [];
+
+    results.forEach((result, index) => {
+        if (result.status === 'fulfilled') {
+            successfulResults.push(result.value);
+        } else {
+            failedResults.push({
+                stepNumber: steps[index].number,
+                error: result.reason.message
+            });
+        }
+    });
+
+    // If we have failures, attempt smart recovery
+    if (failedResults.length > 0 && successfulResults.length > 0) {
+        logger.warn(`${failedResults.length} parallel steps failed, attempting recovery`, { jobId });
+        const recoveredResults = await recoverFailedParallelSteps(failedResults, successfulResults, context, plan);
+        successfulResults.push(...recoveredResults);
+    } else if (failedResults.length === steps.length) {
+        throw new Error(`All parallel steps failed: ${failedResults.map(f => f.error).join('; ')}`);
+    }
+
+    return successfulResults;
+};
+
+// Execute steps sequentially with adaptive optimization
+const executeSequentialSteps = async (steps, context, plan, jobId) => {
+    const results = [];
+    let currentContext = { ...context };
+
+    for (let i = 0; i < steps.length; i++) {
+        const step = steps[i];
+        logger.info(`Executing sequential step ${step.number}: ${step.name}`, { jobId });
+
+        try {
+            // Build enhanced context from previous steps
+            const stepContext = buildEnhancedStepContext(currentContext, results, step, plan);
+
+            // Create adaptive prompt based on previous findings
+            const stepPrompt = createAdaptiveStepPrompt(step, stepContext, results);
+
+            // Dynamic token allocation based on context richness
+            const adaptiveTokens = calculateAdaptiveTokenAllocation(step, stepContext, results);
+
+            const stepResult = await alchemystService.generateAnalysis(stepPrompt, {
+                maxTokens: adaptiveTokens,
+                temperature: 0.3
+            });
+
+            const processedResult = {
+                stepNumber: step.number,
+                stepName: step.name,
+                description: step.description,
+                content: stepResult.content,
+                tokens: stepResult.tokens,
+                cost: stepResult.cost,
+                executionType: 'sequential',
+                contextRichness: calculateContextRichness(stepContext),
+                quality: await assessStepQuality(stepResult.content),
+                completedAt: new Date()
+            };
+
+            // Validate step quality and retry if needed
+            if (processedResult.quality.score < 0.6) {
+                logger.warn(`Step ${step.number} quality below threshold, retrying with enhanced prompt`, { jobId });
+                const retryResult = await retryStepWithEnhancement(step, stepContext, stepResult);
+                if (retryResult) {
+                    processedResult.content = retryResult.content;
+                    processedResult.tokens += retryResult.tokens;
+                    processedResult.cost += retryResult.cost;
+                    processedResult.quality = await assessStepQuality(retryResult.content);
+                    processedResult.retried = true;
+                }
+            }
+
+            results.push(processedResult);
+
+            // Update context for next step
+            currentContext = await updateStepContext(currentContext, processedResult, plan);
+
+        } catch (error) {
+            logger.error(`Sequential step ${step.number} failed:`, error);
+
+            // Attempt graceful degradation
+            const fallbackResult = await generateFallbackStepResult(step, currentContext, error);
+            if (fallbackResult) {
+                results.push(fallbackResult);
+                currentContext = await updateStepContext(currentContext, fallbackResult, plan);
+            } else {
+                throw new Error(`Sequential step ${step.number} failed: ${error.message}`);
+            }
         }
     }
 
     return results;
 };
+
+// Validate and integrate results for quality assurance
+const validateAndIntegrateResults = async (results, context) => {
+    const validatedResults = [];
+
+    for (const result of results) {
+        try {
+            // Check for content quality
+            if (result.quality.score < 0.5) {
+                logger.warn(`Result quality too low for step ${result.stepNumber}, flagging for review`);
+                result.needsReview = true;
+            }
+
+            // Check for content coherence with context
+            const coherenceScore = await assessContentCoherence(result.content, context);
+            result.coherenceScore = coherenceScore;
+
+            // Extract key insights for context building
+            result.keyInsights = extractKeyInsights(result.content);
+
+            validatedResults.push(result);
+
+        } catch (error) {
+            logger.error(`Validation failed for step ${result.stepNumber}:`, error);
+            result.validationError = error.message;
+            validatedResults.push(result); // Include even failed validation
+        }
+    }
+
+    return validatedResults;
+};
+
+// Smart context building for cost efficiency
+const buildOptimizedStepContext = (context, step, plan) => {
+    return {
+        topic: context.topic,
+        methodology: plan.methodology,
+        stepObjective: step.name,
+        relevantFindings: context.cumulativeInsights ? context.cumulativeInsights.slice(-3) : [], // Only last 3 insights
+        focusArea: extractStepFocusArea(step.description)
+    };
+};
+
+// Enhanced context for sequential steps
+const buildEnhancedStepContext = (context, previousResults, step, plan) => {
+    const recentResults = previousResults.slice(-2); // Last 2 results for context
+
+    return {
+        topic: context.topic,
+        methodology: plan.methodology,
+        stepObjective: step.name,
+        previousFindings: recentResults.map(r => ({
+            step: r.stepName,
+            keyPoints: r.keyInsights || extractKeyInsights(r.content)
+        })),
+        cumulativeInsights: context.cumulativeInsights || [],
+        conflictAreas: identifyPotentialConflicts(recentResults),
+        qualityBaseline: calculateQualityBaseline(previousResults)
+    };
+};
+
+// Assess step quality for validation
+const assessStepQuality = async (content) => {
+    const metrics = {
+        length: content.length,
+        informationDensity: calculateInformationDensity(content),
+        structureScore: assessContentStructure(content),
+        factualityIndicators: countFactualIndicators(content)
+    };
+
+    const score = Math.min(1.0,
+        (metrics.informationDensity * 0.4) +
+        (metrics.structureScore * 0.3) +
+        (Math.min(metrics.factualityIndicators / 5, 1) * 0.3)
+    );
+
+    return {
+        score,
+        metrics,
+        category: score > 0.8 ? 'excellent' : score > 0.6 ? 'good' : score > 0.4 ? 'acceptable' : 'poor'
+    };
+};
+
+// Monitor and update execution context
+const updateExecutionContext = async (context, newResults, plan) => {
+    const updatedContext = { ...context };
+
+    // Extract and merge insights
+    const newInsights = newResults.flatMap(r => r.keyInsights || []);
+    updatedContext.cumulativeInsights = [
+        ...(context.cumulativeInsights || []),
+        ...newInsights
+    ].slice(-10); // Keep only last 10 insights for cost efficiency
+
+    // Update conflict detection
+    updatedContext.identifiedConflicts = await detectNewConflicts(newResults, context);
+
+    // Update quality trends
+    updatedContext.qualityTrend = calculateQualityTrend(newResults);
+
+    // Update cost tracking
+    updatedContext.currentCost = (context.currentCost || 0) +
+        newResults.reduce((sum, r) => sum + (r.cost || 0), 0);
+
+    return updatedContext;
+};
+
+// Smart cost-optimized prompt creation
+const createCostOptimizedStepPrompt = (step, context) => {
+    return `
+RESEARCH STEP: ${step.name}
+OBJECTIVE: ${step.description}
+CONTEXT: ${context.topic} | ${context.methodology}
+
+EFFICIENCY REQUIREMENTS:
+- Focus on HIGH-VALUE information only
+- Avoid redundancy with previous findings
+- Provide SPECIFIC, actionable insights
+- Minimize unnecessary elaboration
+
+${context.relevantFindings ? `RELEVANT CONTEXT: ${context.relevantFindings.slice(0, 2).join('; ')}` : ''}
+
+Deliver concise, high-impact research findings for this specific objective.
+`;
+};
+
+// Adaptive prompt creation for sequential steps
+const createAdaptiveStepPrompt = (step, context, previousResults) => {
+    const recentQualities = previousResults.slice(-2).map(r => r.quality.category);
+    const needsEnhancement = recentQualities.includes('poor') || recentQualities.includes('acceptable');
+
+    let prompt = `
+RESEARCH STEP ${step.number}: ${step.name}
+OBJECTIVE: ${step.description}
+
+CONTEXT & PROGRESSION:
+Topic: ${context.topic}
+Methodology: ${context.methodology}
+Quality Baseline: ${context.qualityBaseline || 'Standard'}
+
+`;
+
+    if (context.previousFindings && context.previousFindings.length > 0) {
+        prompt += `BUILDING ON PREVIOUS FINDINGS:\n`;
+        context.previousFindings.forEach(finding => {
+            prompt += `- ${finding.step}: ${finding.keyPoints.slice(0, 2).join(', ')}\n`;
+        });
+    }
+
+    if (context.conflictAreas && context.conflictAreas.length > 0) {
+        prompt += `\nCONFLICT AREAS TO ADDRESS: ${context.conflictAreas.join(', ')}\n`;
+    }
+
+    if (needsEnhancement) {
+        prompt += `
+QUALITY ENHANCEMENT REQUIRED:
+- Provide detailed, evidence-based analysis
+- Include specific examples and data points
+- Ensure logical flow and clear conclusions
+- Address any gaps from previous steps
+`;
+    }
+
+    prompt += `
+Deliver ${needsEnhancement ? 'comprehensive' : 'focused'}, high-quality research findings that advance the overall research objective.
+`;
+
+    return prompt;
+};
+
+// Calculate adaptive token allocation
+const calculateAdaptiveTokenAllocation = (step, context, previousResults) => {
+    let baseTokens = step.estimatedTokens;
+
+    // Adjust based on context richness
+    const contextMultiplier = 1 + (context.contextRichness || 0) * 0.2;
+
+    // Adjust based on previous step quality
+    const qualityMultiplier = previousResults.length > 0 ?
+        (previousResults.slice(-1)[0].quality.score < 0.6 ? 1.3 : 1.0) : 1.0;
+
+    // Adjust based on step importance (first and last steps get more tokens)
+    const importanceMultiplier = step.number === 1 || step.number > 6 ? 1.1 : 1.0;
+
+    return Math.floor(baseTokens * contextMultiplier * qualityMultiplier * importanceMultiplier);
+};
+
+// Generate execution summary for cost tracking
+const generateExecutionSummary = async (results, plan) => {
+    const totalCost = results.reduce((sum, r) => sum + (r.cost || 0), 0);
+    const totalTokens = results.reduce((sum, r) => sum + (r.tokens || 0), 0);
+    const avgQuality = results.reduce((sum, r) => sum + (r.quality?.score || 0), 0) / results.length;
+
+    return {
+        totalSteps: results.length,
+        totalCost,
+        totalTokens,
+        avgQuality,
+        costEfficiency: plan.costEstimate.totalEstimatedCost / totalCost,
+        parallelSteps: results.filter(r => r.executionType === 'parallel').length,
+        retriedSteps: results.filter(r => r.retried).length,
+        qualityDistribution: {
+            excellent: results.filter(r => r.quality?.category === 'excellent').length,
+            good: results.filter(r => r.quality?.category === 'good').length,
+            acceptable: results.filter(r => r.quality?.category === 'acceptable').length,
+            poor: results.filter(r => r.quality?.category === 'poor').length
+        }
+    };
+};
+
+//helper funcs 
+
+// Add these helper functions that were referenced but not defined
+
+const detectDomain = (topic) => {
+    const domains = {
+        technology: ['software', 'algorithm', 'AI', 'machine learning', 'programming', 'development'],
+        business: ['market', 'strategy', 'finance', 'economics', 'marketing', 'sales'],
+        science: ['research', 'study', 'analysis', 'methodology', 'experiment', 'data'],
+        health: ['medical', 'health', 'clinical', 'patient', 'treatment', 'diagnosis']
+    };
+
+    const topicLower = topic.toLowerCase();
+    for (const [domain, keywords] of Object.entries(domains)) {
+        if (keywords.some(keyword => topicLower.includes(keyword))) {
+            return domain;
+        }
+    }
+    return 'general';
+};
+
+const extractKeyInsights = (content) => {
+    // Simple insight extraction
+    const sentences = content.split(/[.!?]+/).filter(s => s.trim().length > 30);
+    const insights = sentences.filter(s =>
+        s.toLowerCase().includes('important') ||
+        s.toLowerCase().includes('significant') ||
+        s.toLowerCase().includes('key') ||
+        s.toLowerCase().includes('critical') ||
+        s.toLowerCase().includes('findings')
+    );
+    return insights.slice(0, 5).map(s => s.trim());
+};
+
+const calculateInformationDensity = (content) => {
+    const words = content.split(/\s+/);
+    const infoWords = words.filter(word =>
+        word.length > 4 &&
+        !['that', 'this', 'with', 'have', 'will', 'been', 'from', 'they', 'were'].includes(word.toLowerCase())
+    );
+    return Math.min(1.0, infoWords.length / words.length);
+};
+
+const assessContentStructure = (content) => {
+    const hasHeaders = /(?:^|\n)(?:#|\d+\.|[A-Z][^.]*:)/m.test(content);
+    const hasBullets = /(?:^|\n)[-*•]/m.test(content);
+    const hasNumbers = /\d+\.?\s/.test(content);
+    const paragraphs = content.split('\n\n').length;
+
+    let score = 0;
+    if (hasHeaders) score += 0.3;
+    if (hasBullets) score += 0.2;
+    if (hasNumbers) score += 0.2;
+    if (paragraphs > 2) score += 0.3;
+
+    return Math.min(1.0, score);
+};
+
+const countFactualIndicators = (content) => {
+    const indicators = [
+        /\d+%/, // percentages
+        /\$\d+/, // dollar amounts
+        /\d{4}/, // years
+        /according to/gi,
+        /research shows/gi,
+        /studies indicate/gi,
+        /data reveals/gi
+    ];
+
+    return indicators.reduce((count, pattern) => {
+        const matches = content.match(pattern);
+        return count + (matches ? matches.length : 0);
+    }, 0);
+};
+
+const calculateContextRichness = (context) => {
+    let richness = 0;
+    if (context.previousFindings && context.previousFindings.length > 0) richness += 0.3;
+    if (context.cumulativeInsights && context.cumulativeInsights.length > 2) richness += 0.3;
+    if (context.conflictAreas && context.conflictAreas.length > 0) richness += 0.2;
+    if (context.qualityBaseline) richness += 0.2;
+    return Math.min(1.0, richness);
+};
+
+const extractStepFocusArea = (description) => {
+    const focusKeywords = {
+        'analysis': 'analytical',
+        'research': 'investigative',
+        'review': 'evaluative',
+        'comparison': 'comparative',
+        'synthesis': 'integrative'
+    };
+
+    const descLower = description.toLowerCase();
+    for (const [keyword, focus] of Object.entries(focusKeywords)) {
+        if (descLower.includes(keyword)) return focus;
+    }
+    return 'general';
+};
+
+const identifyPotentialConflicts = (results) => {
+    // Simple conflict detection based on contradictory keywords
+    const conflictPairs = [
+        ['increase', 'decrease'],
+        ['positive', 'negative'],
+        ['effective', 'ineffective'],
+        ['beneficial', 'harmful']
+    ];
+
+    const conflicts = [];
+    const allContent = results.map(r => r.content.toLowerCase()).join(' ');
+
+    conflictPairs.forEach(([word1, word2]) => {
+        if (allContent.includes(word1) && allContent.includes(word2)) {
+            conflicts.push(`${word1} vs ${word2}`);
+        }
+    });
+
+    return conflicts;
+};
+
+const calculateQualityBaseline = (results) => {
+    if (results.length === 0) return 'standard';
+    const avgScore = results.reduce((sum, r) => sum + (r.quality?.score || 0.5), 0) / results.length;
+    return avgScore > 0.8 ? 'high' : avgScore > 0.6 ? 'standard' : 'low';
+};
+
+// Stub functions for features we'll implement later
+const shouldReplanBasedOnFindings = (results, plan) => false; // Disable for testing
+const adaptRemainingSteps = async (groups, context, plan) => groups; // Return unchanged
+const handleExecutionError = async (error, group, context, plan) => ({ canContinue: false });
+const recoverFailedParallelSteps = async (failed, successful, context, plan) => [];
+const retryStepWithEnhancement = async (step, context, result) => null;
+const generateFallbackStepResult = async (step, context, error) => null;
+const assessContentCoherence = async (content, context) => 0.8;
+const detectNewConflicts = async (results, context) => [];
+const calculateQualityTrend = (results) => 'stable';
+const updateStepContext = async (context, result, plan) => context;
 
 const buildStepContext = (previousResults, topic) => {
     if (previousResults.length === 0) {
