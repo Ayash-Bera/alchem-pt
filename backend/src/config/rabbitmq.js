@@ -160,47 +160,24 @@ const publishMessage = async (routingKey, message, options = {}) => {
 };
 
 const consumeMessages = async (queueName, processorFunction) => {
-    try {
-        if (!channel) {
-            throw new Error('RabbitMQ channel not available');
-        }
+    await channel.consume(queueName, async (message) => {
+        if (message) {
+            try {
+                const content = JSON.parse(message.content.toString());
 
-        await channel.consume(queueName, async (message) => {
-            if (message) {
-                try {
-                    const content = JSON.parse(message.content.toString());
-                    logger.info(`Processing message from ${queueName}:`, { messageId: message.properties.messageId });
-
-                    // Process the message
-                    await processorFunction(content, message);
-
-                    // Acknowledge successful processing
-                    channel.ack(message);
-                    logger.info(`Message processed successfully:`, { messageId: message.properties.messageId });
-                } catch (error) {
-                    logger.error(`Error processing message from ${queueName}:`, error);
-
-                    // Check retry count
-                    const retryCount = (message.properties.headers && message.properties.headers['x-retry-count']) || 0;
-
-                    if (retryCount < 3) {
-                        // Retry with delay
-                        setTimeout(() => {
-                            channel.nack(message, false, true);
-                        }, Math.pow(2, retryCount) * 1000); // Exponential backoff
-                    } else {
-                        // Send to dead letter queue
-                        channel.nack(message, false, false);
-                    }
+                // Handle as notification, not job execution
+                if (content.action === 'job_created') {
+                    logger.info(`Job notification received: ${content.jobId}`);
+                    // Emit socket events, update metrics, etc.
                 }
-            }
-        });
 
-        logger.info(`Consumer set up for queue: ${queueName}`);
-    } catch (error) {
-        logger.error(`Error setting up consumer for ${queueName}:`, error);
-        throw error;
-    }
+                channel.ack(message);
+            } catch (error) {
+                logger.error('Error processing notification:', error);
+                channel.nack(message, false, false);
+            }
+        }
+    });
 };
 
 const getChannel = () => {

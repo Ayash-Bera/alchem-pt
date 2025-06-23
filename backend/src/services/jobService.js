@@ -92,43 +92,19 @@ class JobService {
 
     async createDeepResearchJob(data) {
         try {
-            const jobData = {
-                topic: data.topic,
-                researchDepth: data.researchDepth || 'medium',
-                sources: data.sources || [],
-                deliverables: data.deliverables || ['summary', 'citations'],
-                options: data.options || {},
-                requestId: data.requestId || `req_${Date.now()}`,
-                createdAt: new Date()
-            };
+            // 1. Create job in Agenda (scheduled for immediate execution)
+            const job = await createJob('deep-research', jobData, {
+                priority: data.priority || 'high',
+                delay: data.delay
+            });
 
-            if (!jobData.topic) {
-                throw new Error('Research topic is required');
-            }
-            // Add timeout to job creation
-            const createJobWithTimeout = Promise.race([
-                createJob('deep-research', jobData, {
-                    priority: data.priority || 'high',
-                    delay: data.delay
-                }),
-                new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error('Job creation timeout')), 5000)
-                )
-            ]);
+            // 2. Publish notification to RabbitMQ (not job data)
+            await publishMessage(ROUTING_KEYS.DEEP_RESEARCH, {
+                jobId: String(job.attrs._id),
+                action: 'job_created',
+                topic: jobData.topic
+            });
 
-            const job = await createJobWithTimeout;
-
-            // Skip RabbitMQ for now if it's causing issues
-            try {
-                await publishMessage(ROUTING_KEYS.DEEP_RESEARCH, {
-                    jobId: String(job.attrs._id),
-                    ...jobData
-                });
-            } catch (mqError) {
-                logger.warn('RabbitMQ publish failed, job will still be processed by Agenda:', mqError.message);
-            }
-
-            logger.info('Deep research job created:', { jobId: job.attrs._id });
             return this.formatJobResponse(job);
         } catch (error) {
             logger.error('Error creating deep research job:', error);
