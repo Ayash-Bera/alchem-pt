@@ -10,7 +10,7 @@ const deepResearchJob = async (job) => {
 
     try {
         job.attrs.progress = 5;
-        await job.save();
+
 
         // Step 1: Create intelligent research plan
         logger.info('Creating research plan...', { jobId });
@@ -18,7 +18,7 @@ const deepResearchJob = async (job) => {
         logger.info('Research plan created successfully', { jobId, stepCount: researchPlan.steps?.length });
 
         job.attrs.progress = 25;
-        await job.save();
+
 
         // Step 2: Execute with our new intelligent system
         logger.info('Executing research plan...', { jobId });
@@ -26,20 +26,20 @@ const deepResearchJob = async (job) => {
         logger.info('Research execution completed', { jobId, resultCount: researchResults.length });
 
         job.attrs.progress = 70;
-        await job.save();
+
 
         // Continue with synthesis...
         logger.info('Synthesizing findings...', { jobId });
         const synthesis = await synthesizeFindings(researchResults, deliverables || ['summary']);
 
         job.attrs.progress = 85;
-        await job.save();
+
 
         logger.info('Generating final deliverables...', { jobId });
         const finalReport = await generateResearchDeliverables(topic, researchResults, synthesis, deliverables || ['summary']);
 
         job.attrs.progress = 95;
-        await job.save();
+
 
         const result = {
             topic,
@@ -57,7 +57,7 @@ const deepResearchJob = async (job) => {
         };
 
         job.attrs.progress = 100;
-        await job.save();
+
 
         const totalCosts = calculateTotalCosts(researchResults, synthesis, finalReport);
         await updateJobCosts(jobId, totalCosts);
@@ -527,7 +527,7 @@ const executeResearchPlan = async (plan, job) => {
             // Update progress
             currentProgress += (group.steps.length * progressIncrement);
             job.attrs.progress = (Math.min(currentProgress, 70));
-            await job.save();
+
 
         } catch (error) {
             logger.error(`Execution group ${groupIndex + 1} failed:`, {
