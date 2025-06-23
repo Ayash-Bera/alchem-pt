@@ -826,22 +826,6 @@ const calculateOptimizedDuration = (steps, complexity) => {
     return Math.floor(parallelTime + sequentialTime);
 };
 
-const detectDomain = (topic) => {
-    const domains = {
-        technology: ['software', 'algorithm', 'AI', 'machine learning', 'programming', 'development'],
-        business: ['market', 'strategy', 'finance', 'economics', 'marketing', 'sales'],
-        science: ['research', 'study', 'analysis', 'methodology', 'experiment', 'data'],
-        health: ['medical', 'health', 'clinical', 'patient', 'treatment', 'diagnosis']
-    };
-
-    const topicLower = topic.toLowerCase();
-    for (const [domain, keywords] of Object.entries(domains)) {
-        if (keywords.some(keyword => topicLower.includes(keyword))) {
-            return domain;
-        }
-    }
-    return 'general';
-};
 
 const extractKeyInsights = (content) => {
     // Simple insight extraction
@@ -870,13 +854,13 @@ const assessContentStructure = (content) => {
     const hasBullets = /(?:^|\n)[-*•]/m.test(content);
     const hasNumbers = /\d+\.?\s/.test(content);
     const paragraphs = content.split('\n\n').length;
-
+    
     let score = 0;
     if (hasHeaders) score += 0.3;
     if (hasBullets) score += 0.2;
     if (hasNumbers) score += 0.2;
     if (paragraphs > 2) score += 0.3;
-
+    
     return Math.min(1.0, score);
 };
 
@@ -890,7 +874,7 @@ const countFactualIndicators = (content) => {
         /studies indicate/gi,
         /data reveals/gi
     ];
-
+    
     return indicators.reduce((count, pattern) => {
         const matches = content.match(pattern);
         return count + (matches ? matches.length : 0);
@@ -914,7 +898,7 @@ const extractStepFocusArea = (description) => {
         'comparison': 'comparative',
         'synthesis': 'integrative'
     };
-
+    
     const descLower = description.toLowerCase();
     for (const [keyword, focus] of Object.entries(focusKeywords)) {
         if (descLower.includes(keyword)) return focus;
@@ -930,16 +914,16 @@ const identifyPotentialConflicts = (results) => {
         ['effective', 'ineffective'],
         ['beneficial', 'harmful']
     ];
-
+    
     const conflicts = [];
     const allContent = results.map(r => r.content.toLowerCase()).join(' ');
-
+    
     conflictPairs.forEach(([word1, word2]) => {
         if (allContent.includes(word1) && allContent.includes(word2)) {
             conflicts.push(`${word1} vs ${word2}`);
         }
     });
-
+    
     return conflicts;
 };
 
@@ -947,6 +931,23 @@ const calculateQualityBaseline = (results) => {
     if (results.length === 0) return 'standard';
     const avgScore = results.reduce((sum, r) => sum + (r.quality?.score || 0.5), 0) / results.length;
     return avgScore > 0.8 ? 'high' : avgScore > 0.6 ? 'standard' : 'low';
+};
+
+const detectDomain = (topic) => {
+    const domains = {
+        technology: ['software', 'algorithm', 'AI', 'machine learning', 'programming', 'development'],
+        business: ['market', 'strategy', 'finance', 'economics', 'marketing', 'sales'],
+        science: ['research', 'study', 'analysis', 'methodology', 'experiment', 'data'],
+        health: ['medical', 'health', 'clinical', 'patient', 'treatment', 'diagnosis']
+    };
+
+    const topicLower = topic.toLowerCase();
+    for (const [domain, keywords] of Object.entries(domains)) {
+        if (keywords.some(keyword => topicLower.includes(keyword))) {
+            return domain;
+        }
+    }
+    return 'general';
 };
 
 // Stub functions for features we'll implement later

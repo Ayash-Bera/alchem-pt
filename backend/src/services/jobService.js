@@ -78,7 +78,7 @@ class JobService {
             });
 
             await publishMessage(ROUTING_KEYS.DOCUMENT_SUMMARY, {
-                jobId: job.attrs._id,
+                jobId: String(job.attrs._id),
                 ...jobData
             });
 
@@ -121,7 +121,7 @@ class JobService {
             // Skip RabbitMQ for now if it's causing issues
             try {
                 await publishMessage(ROUTING_KEYS.DEEP_RESEARCH, {
-                    jobId: job.attrs._id,
+                    jobId: String(job.attrs._id),
                     ...jobData
                 });
             } catch (mqError) {
