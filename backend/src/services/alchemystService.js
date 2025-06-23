@@ -42,7 +42,7 @@ class AlchemystService {
                     'Authorization': `Bearer ${this.apiKey}`,
                     'Content-Type': 'application/json'
                 },
-                timeout: this.defaultTimeout,
+                timeout: 60000,
                 responseType: 'stream'
             });
 
@@ -121,7 +121,7 @@ class AlchemystService {
                 // Add timeout for the stream
                 setTimeout(() => {
                     reject(new Error('Stream timeout - no response received within timeout period'));
-                }, this.defaultTimeout);
+                }, 60000);
             });
 
         } catch (error) {
