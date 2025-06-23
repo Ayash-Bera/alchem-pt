@@ -7,7 +7,7 @@ const initializeAgenda = async () => {
     try {
         // FIXED: Use correct Agenda.js initialization pattern
         agenda = new Agenda({
-            db: { 
+            db: {
                 address: process.env.MONGODB_URL || 'mongodb://agendauser:agenda123@10.0.0.6:27017/alchemyst_platform?replicaSet=alchemyst-rs',
                 collection: 'agendaJobs'
             },
@@ -38,15 +38,24 @@ const initializeAgenda = async () => {
     }
 };
 
+// Helper function to categorize jobs
+const getJobCategory = (jobName) => {
+    const systemJobs = ['cleanup-old-jobs', 'cleanup-finished-jobs', 'system-health-check'];
+    return systemJobs.includes(jobName) ? 'system' : 'user';
+};
+
 const setupEventListeners = () => {
     agenda.on('ready', () => {
         logger.info('🟢 AgendaJS ready for processing');
     });
 
     agenda.on('start', (job) => {
-        logger.info(`🎯 JOB STARTING: ${job.attrs.name}`, {
+        const category = getJobCategory(job.attrs.name);
+        logger.info(`🎯 ${category.toUpperCase()} JOB STARTING: ${job.attrs.name}`, {
             jobId: job.attrs._id,
+            category,
             topic: job.attrs.data?.topic || 'N/A',
+            repository: job.attrs.data?.repository || 'N/A',
             scheduledFor: job.attrs.nextRunAt,
             actualStart: new Date()
         });
@@ -55,8 +64,10 @@ const setupEventListeners = () => {
 
     agenda.on('complete', (job) => {
         const duration = job.attrs.lastFinishedAt - job.attrs.lastRunAt;
-        logger.info(`Job completed: ${job.attrs.name}`, {
+        const category = getJobCategory(job.attrs.name);
+        logger.info(`✅ ${category.toUpperCase()} JOB COMPLETED: ${job.attrs.name}`, {
             jobId: job.attrs._id,
+            category,
             duration: `${duration}ms`
         });
         updateJobMetrics(job.attrs._id, 'completed', {
@@ -66,12 +77,18 @@ const setupEventListeners = () => {
     });
 
     agenda.on('success', (job) => {
-        logger.info(`Job succeeded: ${job.attrs.name}`, { jobId: job.attrs._id });
+        const category = getJobCategory(job.attrs.name);
+        logger.info(`✅ ${category.toUpperCase()} JOB SUCCEEDED: ${job.attrs.name}`, {
+            jobId: job.attrs._id,
+            category
+        });
     });
 
     agenda.on('fail', (error, job) => {
-        logger.error(`Job failed: ${job.attrs.name}`, {
+        const category = getJobCategory(job.attrs.name);
+        logger.error(`❌ ${category.toUpperCase()} JOB FAILED: ${job.attrs.name}`, {
             jobId: job.attrs._id,
+            category,
             error: error.message,
             stack: error.stack
         });
@@ -90,11 +107,11 @@ const setupEventListeners = () => {
 const defineJobProcessors = async () => {
     // Import job processors
     const githubAnalysisJob = require('../jobs/githubAnalysisJob');
-    const documentSummaryJob = require('../jobs/documentSummaryJob'); 
+    const documentSummaryJob = require('../jobs/documentSummaryJob');
     const deepResearchJob = require('../jobs/deepResearchJob');
 
     // Define processors with error handling
-    agenda.define('github-analysis', { 
+    agenda.define('github-analysis', {
         concurrency: parseInt(process.env.DEFAULT_JOB_CONCURRENCY) || 2,
         lockLifetime: parseInt(process.env.JOB_LOCK_LIFETIME) || 600000
     }, async (job, done) => {
@@ -108,12 +125,12 @@ const defineJobProcessors = async () => {
         }
     });
 
-    agenda.define('document-summary', { 
+    agenda.define('document-summary', {
         concurrency: parseInt(process.env.DEFAULT_JOB_CONCURRENCY) || 3,
         lockLifetime: parseInt(process.env.JOB_LOCK_LIFETIME) || 600000
     }, async (job, done) => {
         try {
-           const result = await documentSummaryJob(job);
+            const result = await documentSummaryJob(job);
             job.attrs.result = result;
             done();
         } catch (error) {
@@ -122,12 +139,12 @@ const defineJobProcessors = async () => {
         }
     });
 
-    agenda.define('deep-research', { 
+    agenda.define('deep-research', {
         concurrency: 1,
         lockLifetime: parseInt(process.env.JOB_LOCK_LIFETIME) || 3600000
     }, async (job, done) => {
         try {
-            logger.info('🔍 DEEP RESEARCH PROCESSOR INVOKED', { 
+            logger.info('🔍 DEEP RESEARCH PROCESSOR INVOKED', {
                 jobId: job.attrs._id,
                 topic: job.attrs.data?.topic,
                 timestamp: new Date()
@@ -152,14 +169,14 @@ const defineJobProcessors = async () => {
     agenda.define('system-health-check', { concurrency: 1 }, systemHealthCheck);
 
     // CRITICAL: Start agenda using IIFE pattern from docs
-    (async function() {
+    (async function () {
         await agenda.start();
         logger.info('🟢 AgendaJS auto-processing STARTED', {
             isRunning: agenda._isRunning,
             processEvery: '10 seconds'
         });
 
-        // Schedule recurring jobs after start
+        // Schedule recurring jobs after start (FIXED: Only if enabled)
         await scheduleRecurringJobs();
     })();
 
@@ -168,12 +185,19 @@ const defineJobProcessors = async () => {
 
 const scheduleRecurringJobs = async () => {
     try {
+        // FIXED: Only schedule recurring jobs if explicitly enabled
+        if (process.env.ENABLE_RECURRING_JOBS !== 'true') {
+            logger.info('🚫 Recurring jobs disabled by configuration (ENABLE_RECURRING_JOBS != true)');
+            return;
+        }
+
+        logger.info('📅 Scheduling recurring system jobs...');
         await agenda.every('0 2 * * *', 'cleanup-old-jobs');
         await agenda.every('5 minutes', 'system-health-check');
         await agenda.every('1 hour', 'cleanup-finished-jobs');
-        logger.info('Recurring jobs scheduled');
+        logger.info('✅ Recurring jobs scheduled successfully');
     } catch (error) {
-        logger.error('Error scheduling recurring jobs:', error);
+        logger.error('❌ Error scheduling recurring jobs:', error);
     }
 };
 
@@ -191,19 +215,16 @@ const createJob = async (jobType, jobData, options = {}) => {
         if (options.runAt) job.schedule(options.runAt);
 
         await job.save();
-        
-        logger.info(`📋 Job saved to database, scheduled for: ${job.attrs.nextRunAt}`, {
+
+        const category = getJobCategory(jobType);
+        logger.info(`📋 ${category.toUpperCase()} JOB CREATED: ${jobType}`, {
             jobId: job.attrs._id,
+            category,
             nextRunAt: job.attrs.nextRunAt,
             currentTime: new Date()
         });
 
         await createJobMetrics(job.attrs._id, jobType, jobData);
-
-        logger.info(`Job created: ${jobType}`, {
-            jobId: job.attrs._id,
-            nextRunAt: job.attrs.nextRunAt
-        });
 
         return job;
     } catch (error) {
@@ -227,7 +248,7 @@ const cancelJob = async (jobId) => {
 
 const getJobStatus = async (jobId) => {
     try {
-	const { ObjectId } = require('mongodb');
+        const { ObjectId } = require('mongodb');
         const jobs = await agenda.jobs({ _id: new ObjectId(jobId) });
         return jobs.length > 0 ? jobs[0] : null;
     } catch (error) {
@@ -288,7 +309,7 @@ const cleanupOldJobs = async (job) => {
             status: { $in: ['completed', 'failed', 'cancelled'] }
         });
 
-        logger.info(`Cleanup completed: ${numRemoved} jobs, ${result.deletedCount} metrics`);
+        logger.info(`🧹 SYSTEM: Cleanup completed - ${numRemoved} jobs, ${result.deletedCount} metrics removed`);
     } catch (error) {
         logger.error('Cleanup job error:', error);
         throw error;
@@ -304,7 +325,7 @@ const cleanupFinishedJobs = async (job) => {
                 { failedAt: { $lt: twoHoursAgo } }
             ]
         });
-        logger.info(`Cleaned up ${numRemoved} finished jobs older than 2 hours`);
+        logger.info(`🧹 SYSTEM: Cleaned up ${numRemoved} finished jobs older than 2 hours`);
     } catch (error) {
         logger.error('Cleanup finished jobs error:', error);
         throw error;
@@ -316,7 +337,7 @@ const systemHealthCheck = async (job) => {
         const { checkDatabaseHealth } = require('./database');
         const dbHealth = await checkDatabaseHealth();
 
-        logger.info('System health check completed', { database: dbHealth.healthy });
+        logger.info('💚 SYSTEM: Health check completed', { database: dbHealth.healthy });
 
         const { getDatabase } = require('./database');
         const db = getDatabase();
@@ -353,4 +374,4 @@ module.exports = {
     listJobs,
     getAgenda,
     gracefulShutdown
-}; 
+};

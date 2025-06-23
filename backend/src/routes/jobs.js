@@ -29,18 +29,48 @@ router.get('/system-status', async (req, res) => {
     try {
         const { getAgenda } = require('../config/agenda');
         const agenda = getAgenda();
-        
-        const runningJobs = await agenda.jobs({lockedAt: {$exists: true}});
-        const scheduledJobs = await agenda.jobs({nextRunAt: {$exists: true}, lockedAt: {$exists: false}});
-        const totalJobs = await agenda.jobs({});
-        
+
+        const runningJobs = await agenda.jobs({ lockedAt: { $exists: true } });
+        const scheduledJobs = await agenda.jobs({ nextRunAt: { $exists: true }, lockedAt: { $exists: false } });
+        const completedJobs = await agenda.jobs({ lastFinishedAt: { $exists: true } });
+        const failedJobs = await agenda.jobs({ failedAt: { $exists: true } });
+
+        const formatJobDetails = (jobs) => {
+            return jobs.map(job => ({
+                id: job.attrs._id,
+                name: job.attrs.name,
+                type: getJobCategory(job.attrs.name),
+                data: job.attrs.data ? {
+                    topic: job.attrs.data.topic,
+                    repository: job.attrs.data.repository,
+                    document: job.attrs.data.document ? 'Document provided' : undefined
+                } : {},
+                nextRunAt: job.attrs.nextRunAt,
+                lastRunAt: job.attrs.lastRunAt,
+                lastFinishedAt: job.attrs.lastFinishedAt,
+                failedAt: job.attrs.failedAt,
+                progress: job.attrs.progress || 0,
+                failReason: job.attrs.failReason
+            }));
+        };
+
         res.json({
             success: true,
             status: {
                 isRunning: !!agenda._collection,
-                runningJobs: runningJobs.length,
-                scheduledJobs: scheduledJobs.length,
-                totalJobs: totalJobs.length,
+                summary: {
+                    running: runningJobs.length,
+                    scheduled: scheduledJobs.length,
+                    completed: completedJobs.length,
+                    failed: failedJobs.length,
+                    total: runningJobs.length + scheduledJobs.length + completedJobs.length + failedJobs.length
+                },
+                details: {
+                    runningJobs: formatJobDetails(runningJobs),
+                    scheduledJobs: formatJobDetails(scheduledJobs.slice(0, 10)), // Limit to 10
+                    recentCompleted: formatJobDetails(completedJobs.slice(-5)), // Last 5
+                    recentFailed: formatJobDetails(failedJobs.slice(-5)) // Last 5
+                },
                 timestamp: new Date()
             }
         });
@@ -49,6 +79,13 @@ router.get('/system-status', async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+
+// Add this helper function at the bottom of the file
+const getJobCategory = (jobName) => {
+    const systemJobs = ['cleanup-old-jobs', 'cleanup-finished-jobs', 'system-health-check'];
+    if (systemJobs.includes(jobName)) return 'system';
+    return 'user';
+};
 
 // Create a new job
 router.post('/', async (req, res) => {
