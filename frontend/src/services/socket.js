@@ -31,4 +31,6 @@ class SocketService {
     }
 }
 
-export default new SocketService();
+// Create and export instance
+const socketService = new SocketService();
+export default socketService;

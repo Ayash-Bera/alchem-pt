@@ -6,14 +6,9 @@ import {
     Wifi,
     WifiOff,
     Zap,
-    Server,
-    Globe,
-    TrendingUp,
     Clock,
     BarChart3,
-    Monitor,
-    HardDrive,
-    Gauge
+    Monitor
 } from 'lucide-react';
 
 const LiveMetrics = ({ isConnected = false, liveData = {} }) => {

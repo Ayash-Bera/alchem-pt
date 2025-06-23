@@ -11,17 +11,78 @@ import {
     Zap,
     Database,
     Globe,
-    Shield,
     Clock,
     Sparkles,
-    Eye,
     AlertTriangle,
     CheckCircle,
     RefreshCw,
-    Cpu,
     Wifi,
     WifiOff
 } from 'lucide-react';
+
+// Helper functions outside component
+const loadJobsHelper = async (setJobs) => {
+    try {
+        const response = await jobsAPI.getJobs({ limit: 50 });
+        if (response.data && response.data.jobs) {
+            setJobs(response.data.jobs);
+        } else if (Array.isArray(response.data)) {
+            setJobs(response.data);
+        } else {
+            setJobs([]);
+        }
+    } catch (error) {
+        console.error('Error loading jobs:', error);
+        setJobs([]);
+    }
+};
+
+const loadMetricsHelper = async (jobs, setMetrics) => {
+    try {
+        const [costResponse, performanceResponse, dashboardResponse] = await Promise.allSettled([
+            metricsAPI.getCostMetrics(),
+            metricsAPI.getPerformanceMetrics(),
+            metricsAPI.getDashboardMetrics()
+        ]);
+
+        const costData = costResponse.status === 'fulfilled' ? costResponse.value.data?.metrics || {} : {};
+        const perfData = performanceResponse.status === 'fulfilled' ? performanceResponse.value.data?.metrics || {} : {};
+        const dashData = dashboardResponse.status === 'fulfilled' ? dashboardResponse.value.data?.dashboard || {} : {};
+
+        const totalJobs = jobs.length || 0;
+        const runningJobs = jobs.filter(job => job.status === 'running').length || 0;
+        const completedJobs = jobs.filter(job => job.status === 'completed').length || 0;
+        const failedJobs = jobs.filter(job => job.status === 'failed').length || 0;
+
+        const summaryMetrics = {
+            totalJobs,
+            runningJobs,
+            completedJobs,
+            failedJobs,
+            totalCost: costData.totalCost || 0,
+            avgDuration: perfData.avgDuration || 0,
+            totalTokens: costData.totalTokens || 0,
+            successRate: totalJobs > 0 ? (completedJobs / totalJobs) * 100 : 0,
+            ...dashData.summary
+        };
+
+        setMetrics(summaryMetrics);
+    } catch (error) {
+        console.error('Error loading metrics:', error);
+        setMetrics({});
+    }
+};
+
+const loadSystemHealthHelper = async (setSystemHealth) => {
+    try {
+        const response = await healthAPI.getDetailedHealth();
+        if (response.data) {
+            setSystemHealth(response.data);
+        }
+    } catch (error) {
+        console.error('Error loading system health:', error);
+    }
+};
 
 const Dashboard = () => {
     const [jobs, setJobs] = useState([]);
@@ -33,28 +94,29 @@ const Dashboard = () => {
     const [refreshing, setRefreshing] = useState(false);
     const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
 
-    // Mouse tracking for interactive effects
+    // Mouse tracking
     useEffect(() => {
         const handleMouseMove = (e) => {
             setMousePosition({ x: e.clientX, y: e.clientY });
         };
-
         window.addEventListener('mousemove', handleMouseMove);
         return () => window.removeEventListener('mousemove', handleMouseMove);
     }, []);
 
-    useEffect(() => {
-        loadDashboardData();
-        setupSocketConnection();
-
-        // Refresh data every 30 seconds
-        const interval = setInterval(loadDashboardData, 30000);
-
-        return () => {
-            clearInterval(interval);
-            socketService.disconnect();
-        };
-    }, []);
+    const loadDashboardData = async () => {
+        try {
+            setRefreshing(true);
+            await Promise.all([
+                loadJobsHelper(setJobs),
+                loadSystemHealthHelper(setSystemHealth)
+            ]);
+        } catch (error) {
+            console.error('Error loading dashboard data:', error);
+        } finally {
+            setLoading(false);
+            setRefreshing(false);
+        }
+    };
 
     const setupSocketConnection = () => {
         const socket = socketService.connect();
@@ -73,16 +135,16 @@ const Dashboard = () => {
         });
 
         socket.on('job_created', () => {
-            loadJobs();
+            loadJobsHelper(setJobs);
         });
 
         socket.on('job_completed', () => {
-            loadJobs();
-            loadMetrics();
+            loadJobsHelper(setJobs);
+            loadMetricsHelper(jobs, setMetrics);
         });
 
         socket.on('job_failed', () => {
-            loadJobs();
+            loadJobsHelper(setJobs);
         });
 
         socket.on('system_status', (data) => {
@@ -94,93 +156,33 @@ const Dashboard = () => {
         });
     };
 
-    const loadDashboardData = async () => {
-        try {
-            setRefreshing(true);
-            await Promise.all([
-                loadJobs(),
-                loadMetrics(),
-                loadSystemHealth()
-            ]);
-        } catch (error) {
-            console.error('Error loading dashboard data:', error);
-        } finally {
-            setLoading(false);
-            setRefreshing(false);
+    useEffect(() => {
+        loadDashboardData();
+        setupSocketConnection();
+
+        const interval = setInterval(loadDashboardData, 30000);
+        return () => {
+            clearInterval(interval);
+            socketService.disconnect();
+        };
+    }, []);
+
+    // Load metrics after jobs are loaded
+    useEffect(() => {
+        if (jobs.length >= 0) {
+            loadMetricsHelper(jobs, setMetrics);
         }
-    };
-
-    const loadJobs = async () => {
-        try {
-            const response = await jobsAPI.getJobs({ limit: 50 });
-            if (response.data.success) {
-                setJobs(response.data.jobs);
-            }
-        } catch (error) {
-            console.error('Error loading jobs:', error);
-        }
-    };
-
-    const loadMetrics = async () => {
-        try {
-            const [costResponse, performanceResponse, dashboardResponse] = await Promise.all([
-                metricsAPI.getCostMetrics(),
-                metricsAPI.getPerformanceMetrics(),
-                metricsAPI.getDashboardMetrics()
-            ]);
-
-            const costData = costResponse.data.success ? costResponse.data.metrics : {};
-            const perfData = performanceResponse.data.success ? performanceResponse.data.metrics : {};
-            const dashData = dashboardResponse.data.success ? dashboardResponse.data.dashboard : {};
-
-            // Calculate summary metrics
-            const totalJobs = jobs.length;
-            const runningJobs = jobs.filter(job => job.status === 'running').length;
-            const completedJobs = jobs.filter(job => job.status === 'completed').length;
-            const failedJobs = jobs.filter(job => job.status === 'failed').length;
-
-            const summaryMetrics = {
-                totalJobs,
-                runningJobs,
-                completedJobs,
-                failedJobs,
-                totalCost: costData.totalCost || 0,
-                avgDuration: perfData.avgDuration || 0,
-                totalTokens: costData.totalTokens || 0,
-                costPerToken: costData.totalCost && costData.totalTokens
-                    ? costData.totalCost / costData.totalTokens
-                    : 0,
-                successRate: totalJobs > 0 ? (completedJobs / totalJobs) * 100 : 0,
-                ...dashData.summary
-            };
-
-            setMetrics(summaryMetrics);
-        } catch (error) {
-            console.error('Error loading metrics:', error);
-        }
-    };
-
-    const loadSystemHealth = async () => {
-        try {
-            const response = await healthAPI.getDetailedHealth();
-            if (response.data) {
-                setSystemHealth(response.data);
-            }
-        } catch (error) {
-            console.error('Error loading system health:', error);
-        }
-    };
+    }, [jobs]);
 
     const handleViewJob = (job) => {
         console.log('View job:', job);
-        // TODO: Implement job detail modal
     };
 
     const handleRetryJob = async (job) => {
         try {
             const response = await jobsAPI.retryJob(job.id);
             if (response.data.success) {
-                loadJobs();
+                loadJobsHelper(setJobs);
             }
         } catch (error) {
             console.error('Error retrying job:', error);
@@ -194,7 +196,7 @@ const Dashboard = () => {
 
         try {
             await jobsAPI.cancelJob(jobId);
-            loadJobs();
+            loadJobsHelper(setJobs);
         } catch (error) {
             console.error('Error deleting job:', error);
         }
@@ -238,7 +240,6 @@ const Dashboard = () => {
     if (loading) {
         return (
             <div className="min-h-screen relative overflow-hidden">
-                {/* Dynamic background */}
                 <div
                     className="fixed inset-0 opacity-30 pointer-events-none"
                     style={{
@@ -263,7 +264,7 @@ const Dashboard = () => {
 
     return (
         <div className="min-h-screen relative overflow-hidden">
-            {/* Dynamic background with mouse interaction */}
+            {/* Dynamic background */}
             <div
                 className="fixed inset-0 opacity-30 pointer-events-none"
                 style={{
@@ -281,16 +282,14 @@ const Dashboard = () => {
             <div className="container mx-auto px-6 py-16 relative z-10">
                 <div className="max-w-7xl mx-auto">
 
-                    {/* Spectacular Header */}
+                    {/* Header */}
                     <div className="text-center mb-20 relative">
-                        {/* Glowing background text */}
                         <div className="absolute inset-0 flex items-center justify-center">
                             <h1 className="text-8xl font-black bg-gradient-to-r from-green-600/20 via-blue-600/20 to-purple-600/20 bg-clip-text text-transparent blur-sm select-none">
                                 DASHBOARD
                             </h1>
                         </div>
 
-                        {/* Main title */}
                         <div className="relative z-10">
                             <div className="flex items-center justify-center mb-6">
                                 <div className="w-16 h-16 bg-gradient-to-br from-green-500 to-blue-600 rounded-3xl flex items-center justify-center shadow-2xl shadow-green-500/25 animate-pulse">
@@ -325,7 +324,6 @@ const Dashboard = () => {
                                 ))}
                             </div>
 
-                            {/* Refresh Button */}
                             <button
                                 onClick={handleRefresh}
                                 disabled={refreshing}
@@ -351,8 +349,6 @@ const Dashboard = () => {
 
                     {/* Main Dashboard Grid */}
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-
-                        {/* Job History - Takes up 8 columns */}
                         <div className="lg:col-span-8">
                             <div className="relative group">
                                 <div className="absolute -inset-1 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 rounded-3xl blur opacity-20 group-hover:opacity-30 transition duration-1000"></div>
@@ -367,7 +363,6 @@ const Dashboard = () => {
                             </div>
                         </div>
 
-                        {/* Live Metrics - Takes up 4 columns */}
                         <div className="lg:col-span-4">
                             <div className="relative group">
                                 <div className="absolute -inset-1 bg-gradient-to-r from-emerald-500 via-blue-500 to-purple-500 rounded-3xl blur opacity-20 group-hover:opacity-30 transition duration-1000"></div>
@@ -401,7 +396,6 @@ const Dashboard = () => {
                                 </div>
 
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                    {/* Database Health */}
                                     <div className="glass-strong p-6 rounded-2xl">
                                         <div className="flex items-center space-x-3 mb-4">
                                             <Database className={`w-6 h-6 ${systemHealth.services?.database?.healthy ? 'text-green-400' : 'text-red-400'}`} />
@@ -421,7 +415,6 @@ const Dashboard = () => {
                                         </div>
                                     </div>
 
-                                    {/* RabbitMQ Health */}
                                     <div className="glass-strong p-6 rounded-2xl">
                                         <div className="flex items-center space-x-3 mb-4">
                                             <Activity className={`w-6 h-6 ${systemHealth.services?.rabbitmq?.healthy ? 'text-green-400' : 'text-red-400'}`} />
@@ -437,7 +430,6 @@ const Dashboard = () => {
                                         </div>
                                     </div>
 
-                                    {/* API Health */}
                                     <div className="glass-strong p-6 rounded-2xl">
                                         <div className="flex items-center space-x-3 mb-4">
                                             <Globe className={`w-6 h-6 ${systemHealth.services?.alchemyst_api?.healthy ? 'text-green-400' : 'text-red-400'}`} />
@@ -459,7 +451,7 @@ const Dashboard = () => {
                 </div>
             </div>
 
-            {/* Enhanced Connection Status Indicator */}
+            {/* Connection Status */}
             <div className="fixed bottom-8 right-8 z-50">
                 <div className={`flex items-center space-x-4 px-6 py-4 rounded-2xl glass shadow-2xl border transition-all duration-300 ${isConnected
                     ? 'border-green-500/30 shadow-green-500/10'

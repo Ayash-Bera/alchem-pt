@@ -1,6 +1,7 @@
 import axios from 'axios';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://35.209.5.151:8080/api';
+console.log('🌐 API Base URL:', API_BASE_URL);
 
 // Create axios instance with default configuration
 const api = axios.create({
@@ -14,11 +15,18 @@ const api = axios.create({
 // Request interceptor for logging and authentication
 api.interceptors.request.use(
     (config) => {
-        console.log(`API Request: ${config.method?.toUpperCase()} ${config.url}`);
+        const fullUrl = `${config.baseURL}${config.url}`;
+        console.log(`🔄 API Request: ${config.method?.toUpperCase()} ${fullUrl}`);
+        console.log('Request config:', {
+            method: config.method,
+            url: fullUrl,
+            timeout: config.timeout,
+            headers: config.headers
+        });
         return config;
     },
     (error) => {
-        console.error('API Request Error:', error);
+        console.error('❌ API Request Error:', error);
         return Promise.reject(error);
     }
 );
