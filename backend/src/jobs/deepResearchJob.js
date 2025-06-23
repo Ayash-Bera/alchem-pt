@@ -1,6 +1,6 @@
 const alchemystService = require('../services/alchemystService');
 const logger = require('../utils/logger');
-const { getPool } = require('../config/database');
+const { getDatabase } = require('../config/database');
 
 const deepResearchJob = async (job) => {
     const { topic, researchDepth, sources, deliverables, options, requestId } = job.attrs.data;
@@ -305,6 +305,18 @@ const parseResearchSteps = (planContent, depth, tokenBudget) => {
     }
 
     return steps.slice(0, optimalStepCount); // Cap at optimal count
+};
+
+const calculateOptimizedDuration = (steps, complexity) => {
+    const baseTimePerStep = complexity.level === 'low' ? 30 : complexity.level === 'medium' ? 45 : 60;
+    const parallelSteps = steps.filter(step => step.canRunInParallel).length;
+    const sequentialSteps = steps.length - parallelSteps;
+    
+    // Parallel steps take less total time
+    const parallelTime = parallelSteps > 0 ? Math.max(baseTimePerStep, parallelSteps * baseTimePerStep * 0.6) : 0;
+    const sequentialTime = sequentialSteps * baseTimePerStep;
+    
+    return Math.floor(parallelTime + sequentialTime); // Total minutes
 };
 
 // Helper function for token allocation per step
@@ -1393,24 +1405,35 @@ const calculateTotalCosts = (researchResults, synthesis, deliverables) => {
 
 const updateJobCosts = async (jobId, costs, errorMessage = null) => {
     try {
-        const pool = getPool();
+        const db = getDatabase();
+        const jobMetrics = db.collection('job_metrics');
 
         if (costs) {
             const totalTokens = costs.research + costs.synthesis + costs.deliverables;
-            await pool.query(
-                `UPDATE job_metrics 
-                 SET cost_usd = $1, tokens_used = $2, api_calls = api_calls + 5 
-                 WHERE job_id = $3`,
-                [costs.total, totalTokens, jobId]
+            await jobMetrics.updateOne(
+                { job_id: jobId },
+                {
+                    $set: {
+                        cost_usd: costs.total,
+                        tokens_used: totalTokens,
+                        updated_at: new Date()
+                    },
+                    $inc: {
+                        api_calls: 5
+                    }
+                }
             );
         }
 
         if (errorMessage) {
-            await pool.query(
-                `UPDATE job_metrics 
-                 SET error_message = $1 
-                 WHERE job_id = $2`,
-                [errorMessage, jobId]
+            await jobMetrics.updateOne(
+                { job_id: jobId },
+                {
+                    $set: {
+                        error_message: errorMessage,
+                        updated_at: new Date()
+                    }
+                }
             );
         }
     } catch (error) {
