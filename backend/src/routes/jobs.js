@@ -5,133 +5,48 @@ const socketService = require('../services/socketService');
 
 const router = express.Router();
 
+// Clear all jobs - utility function
 router.post('/clear-all', async (req, res) => {
     try {
         const { getAgenda } = require('../config/agenda');
         const agenda = getAgenda();
-
-        // Clear ALL jobs
         const cleared = await agenda.cancel({});
-
-        res.json({ clearedJobs: cleared });
-    } catch (error) {
-        res.json({ error: error.message });
-    }
-});
-
-// Replace force-process endpoint
-router.get('/force-process', async (req, res) => {
-    try {
-        const { getAgenda } = require('../config/agenda');
-        const agenda = getAgenda();
         
-        // Get a waiting job and try to process it
-        const jobs = await agenda.jobs({ nextRunAt: { $lte: new Date() } });
-        
-        if (jobs.length > 0) {
-            const job = jobs[0];
-            console.log('Processing job manually:', job.attrs.name);
-            await job.run();
-        }
-        
+        logger.info('Cleared ' + cleared + ' jobs from system');
         res.json({ 
-            isRunning: agenda._isRunning,
-            processedJob: jobs.length > 0 ? jobs[0].attrs.name : 'none',
-            totalJobs: jobs.length
+            success: true, 
+            clearedJobs: cleared,
+            message: 'Cleared ' + cleared + ' jobs'
         });
     } catch (error) {
-        res.json({ error: error.message, stack: error.stack });
-    }
-});
-router.get('/agenda-debug', async (req, res) => {
-    try {
-        const { getAgenda } = require('../config/agenda');
-        const agenda = getAgenda();
-        
-        const stats = await agenda.jobs({});
-        res.json({
-            isRunning: agenda._isRunning,
-            jobCount: stats.length,
-            jobs: stats.map(j => ({
-                name: j.attrs.name,
-                status: j.attrs.lastFinishedAt ? 'finished' : j.attrs.lockedAt ? 'running' : 'waiting'
-            }))
-        });
-    } catch (error) {
-        res.json({ error: error.message, agendaAvailable: false });
-    }
-});
-
-// Add to backend/src/routes/jobs.js
-router.post('/force-restart', async (req, res) => {
-    try {
-        const { getAgenda } = require('../config/agenda');
-        const agenda = getAgenda();
-        
-        // Clear waiting jobs
-        await agenda.cancel({ name: 'deep-research' });
-        
-        // Force restart
-        await agenda.stop();
-        await agenda.start();
-        
-        res.json({ success: true, message: 'AgendaJS restarted, waiting jobs cleared' });
-    } catch (error) {
+        logger.error('Error clearing jobs:', error);
         res.status(500).json({ error: error.message });
     }
 });
 
-router.post('/run-one', async (req, res) => {
-    try {
-        const { getAgenda } = require('../config/agenda');
-        const agenda = getAgenda();
-        
-        // Get one scheduled job and force run it
-        const jobs = await agenda.jobs({nextRunAt: {$exists: true}}, {}, 1);
-        if (jobs.length > 0) {
-            await jobs[0].run();
-            res.json({ success: true, jobRan: jobs[0].attrs.name });
-        } else {
-            res.json({ error: 'No jobs to run' });
-        }
-    } catch (error) {
-        res.json({ error: error.message });
-    }
-});
-
-router.post('/run-deep-research', async (req, res) => {
-    try {
-        const { getAgenda } = require('../config/agenda');
-        const agenda = getAgenda();
-        
-        const jobs = await agenda.jobs({name: 'deep-research'}, {}, 1);
-        if (jobs.length > 0) {
-            await jobs[0].run();
-            res.json({ success: true, jobRan: 'deep-research' });
-        } else {
-            res.json({ error: 'No deep-research jobs found' });
-        }
-    } catch (error) {
-        res.json({ error: error.message, stack: error.stack });
-    }
-});
-// Add this at the very top, right after the router definition
-router.get('/agenda-status', async (req, res) => {
+// System status check
+router.get('/system-status', async (req, res) => {
     try {
         const { getAgenda } = require('../config/agenda');
         const agenda = getAgenda();
         
         const runningJobs = await agenda.jobs({lockedAt: {$exists: true}});
         const scheduledJobs = await agenda.jobs({nextRunAt: {$exists: true}, lockedAt: {$exists: false}});
+        const totalJobs = await agenda.jobs({});
         
         res.json({
-            isRunning: !!agenda._collection,
-            runningJobs: runningJobs.length,
-            scheduledJobs: scheduledJobs.length,
-            totalJobs: await agenda.jobs({}).length
+            success: true,
+            status: {
+                isRunning: !!agenda._collection,
+                runningJobs: runningJobs.length,
+                scheduledJobs: scheduledJobs.length,
+                totalJobs: totalJobs.length,
+                timestamp: new Date()
+            }
         });
     } catch (error) {
-        res.json({ error: error.message });
+        logger.error('Error getting system status:', error);
+        res.status(500).json({ error: error.message });
     }
 });
 
@@ -159,14 +74,13 @@ router.post('/', async (req, res) => {
                 break;
             default:
                 return res.status(400).json({
-                    error: `Unsupported job type: ${type}`
+                    error: 'Unsupported job type: ' + type
                 });
         }
 
         // Emit job creation event to connected clients
         socketService.emitJobCreated(job);
-
-        logger.info(`Job created via API: ${type}`, { jobId: job.id });
+        logger.info('Job created via API: ' + type, { jobId: job.id });
 
         res.status(201).json({
             success: true,
@@ -187,9 +101,7 @@ router.get('/', async (req, res) => {
             type,
             status,
             limit = 50,
-            skip = 0,
-            sortBy = 'createdAt',
-            sortOrder = 'desc'
+            skip = 0
         } = req.query;
 
         const filters = {
@@ -230,8 +142,8 @@ router.get('/:id', async (req, res) => {
             success: true,
             job
         });
-    } catch (error) {
-        logger.error(`Error getting job ${req.params.id}:`, error);
+    } catch(error) {
+        logger.error('Error getting job ' + req.params.id + ':', error);
         res.status(500).json({
             error: error.message
         });
@@ -252,15 +164,14 @@ router.delete('/:id', async (req, res) => {
 
         // Emit job cancellation event
         socketService.emitJobCancelled(id);
-
-        logger.info(`Job cancelled via API: ${id}`);
+        logger.info('Job cancelled via API: ' + id);
 
         res.json({
             success: true,
             message: 'Job cancelled successfully'
         });
     } catch (error) {
-        logger.error(`Error cancelling job ${req.params.id}:`, error);
+        logger.error('Error cancelling job ' + req.params.id + ':', error);
         res.status(500).json({
             error: error.message
         });
@@ -285,83 +196,35 @@ router.get('/stats/overview', async (req, res) => {
     }
 });
 
-// Batch job creation
-router.post('/batch', async (req, res) => {
+// Get job progress/status for real-time updates
+router.get('/:id/progress', async (req, res) => {
     try {
-        const { jobs } = req.body;
+        const { id } = req.params;
+        const job = await jobService.getJob(id);
 
-        if (!Array.isArray(jobs) || jobs.length === 0) {
-            return res.status(400).json({
-                error: 'Jobs array is required and must not be empty'
+        if (!job) {
+            return res.status(404).json({
+                error: 'Job not found'
             });
         }
 
-        if (jobs.length > 10) {
-            return res.status(400).json({
-                error: 'Maximum 10 jobs allowed per batch'
-            });
-        }
+        const progressData = {
+            jobId: id,
+            status: job.status,
+            progress: job.progress || 0,
+            lastRunAt: job.lastRunAt,
+            lastFinishedAt: job.lastFinishedAt,
+            failedAt: job.failedAt,
+            estimatedCompletion: calculateEstimatedCompletion(job),
+            metrics: job.metrics
+        };
 
-        const results = [];
-        const errors = [];
-
-        for (let i = 0; i < jobs.length; i++) {
-            const { type, data } = jobs[i];
-
-            try {
-                let job;
-                switch (type) {
-                    case 'github-analysis':
-                        job = await jobService.createGitHubAnalysisJob(data);
-                        break;
-                    case 'document-summary':
-                        job = await jobService.createDocumentSummaryJob(data);
-                        break;
-                    case 'deep-research':
-                        job = await jobService.createDeepResearchJob(data);
-                        break;
-                    default:
-                        throw new Error(`Unsupported job type: ${type}`);
-                }
-
-                results.push({
-                    index: i,
-                    success: true,
-                    job
-                });
-
-                // Emit batch job creation event
-                socketService.emit('batch_job_created', {
-                    batchIndex: i,
-                    jobId: job.id,
-                    type,
-                    status: job.status
-                });
-
-            } catch (error) {
-                errors.push({
-                    index: i,
-                    error: error.message,
-                    type,
-                    data
-                });
-            }
-        }
-
-        logger.info(`Batch job creation completed: ${results.length} successful, ${errors.length} failed`);
-
-        res.status(201).json({
+        res.json({
             success: true,
-            results,
-            errors,
-            summary: {
-                total: jobs.length,
-                successful: results.length,
-                failed: errors.length
-            }
+            progress: progressData
         });
     } catch (error) {
-        logger.error('Error creating batch jobs:', error);
+        logger.error('Error getting job progress ' + req.params.id + ':', error);
         res.status(500).json({
             error: error.message
         });
@@ -402,7 +265,7 @@ router.post('/:id/retry', async (req, res) => {
                 break;
             default:
                 return res.status(400).json({
-                    error: `Cannot retry job type: ${job.name}`
+                    error: 'Cannot retry job type: ' + job.name
                 });
         }
 
@@ -413,7 +276,7 @@ router.post('/:id/retry', async (req, res) => {
             retriedAt: new Date()
         });
 
-        logger.info(`Job retried: ${id} -> ${newJob.id}`);
+        logger.info('Job retried: ' + id + ' -> ' + newJob.id);
 
         res.json({
             success: true,
@@ -421,65 +284,12 @@ router.post('/:id/retry', async (req, res) => {
             newJob
         });
     } catch (error) {
-        logger.error(`Error retrying job ${req.params.id}:`, error);
+        logger.error('Error retrying job ' + req.params.id + ':', error);
         res.status(500).json({
             error: error.message
         });
     }
 });
-
-// Get job progress/status for real-time updates
-router.get('/:id/progress', async (req, res) => {
-    try {
-        const { id } = req.params;
-        const job = await jobService.getJob(id);
-
-        if (!job) {
-            return res.status(404).json({
-                error: 'Job not found'
-            });
-        }
-
-        const progressData = {
-            jobId: id,
-            status: job.status,
-            progress: job.progress || 0,
-            lastRunAt: job.lastRunAt,
-            lastFinishedAt: job.lastFinishedAt,
-            failedAt: job.failedAt,
-            estimatedCompletion: calculateEstimatedCompletion(job),
-            metrics: job.metrics
-        };
-
-        res.json({
-            success: true,
-            progress: progressData
-        });
-    } catch (error) {
-        logger.error(`Error getting job progress ${req.params.id}:`, error);
-        res.status(500).json({
-            error: error.message
-        });
-    }
-});
-
-// Helper function to calculate estimated completion
-const calculateEstimatedCompletion = (job) => {
-    if (job.status === 'completed' || job.status === 'failed') {
-        return null;
-    }
-
-    if (job.status === 'running' && job.lastRunAt && job.progress > 0) {
-        const elapsed = Date.now() - new Date(job.lastRunAt).getTime();
-        const progressRate = job.progress / elapsed;
-        const remainingProgress = 100 - job.progress;
-        const estimatedRemainingTime = remainingProgress / progressRate;
-
-        return new Date(Date.now() + estimatedRemainingTime);
-    }
-
-    return null;
-};
 
 // Job types information endpoint
 router.get('/types/info', (req, res) => {
@@ -514,4 +324,22 @@ router.get('/types/info', (req, res) => {
     });
 });
 
-module.exports = router;
+// Helper function to calculate estimated completion
+const calculateEstimatedCompletion = (job) => {
+    if (job.status === 'completed' || job.status === 'failed') {
+        return null;
+    }
+
+    if (job.status === 'running' && job.lastRunAt && job.progress > 0) {
+        const elapsed = Date.now() - new Date(job.lastRunAt).getTime();
+        const progressRate = job.progress / elapsed;
+        const remainingProgress = 100 - job.progress;
+        const estimatedRemainingTime = remainingProgress / progressRate;
+
+        return new Date(Date.now() + estimatedRemainingTime);
+    }
+
+    return null;
+};
+
+module.exports = router; 
