@@ -53,6 +53,7 @@ const io = new Server(server, {
     cors: corsOptions
 });
 
+
 // Basic middleware
 app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
@@ -95,6 +96,7 @@ app.use((req, res, next) => {
     next();
 });
 
+
 // Health check route (before other routes)
 app.get('/health', (req, res) => {
     res.json({
@@ -105,6 +107,12 @@ app.get('/health', (req, res) => {
         version: '1.0.0'
     });
 });
+
+// After server starts, record initial values
+setTimeout(() => {
+    const { trackHealthCheck } = require('./telemetry/metrics');
+    trackHealthCheck('server_ready', 'success');
+}, 1000);
 
 // Basic route for testing (enhanced)
 app.get('/', (req, res) => {
@@ -278,6 +286,11 @@ async function initializeApp() {
 
         // Initialize custom metrics after telemetry is ready
         initializeCustomMetrics();
+
+        // Test metric recording to make them visible
+        const { trackApiCall, trackHealthCheck } = require('./telemetry/metrics');
+        trackHealthCheck('system_startup', 'success');
+        trackApiCall('system_test', 0.1, 0, 0, 'success');
 
         // Always start the HTTP server first (even if services fail)
         server.listen(PORT, HOST, () => {

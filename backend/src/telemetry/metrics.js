@@ -62,8 +62,8 @@ const initializeCustomMetrics = () => {
         customMetrics.errors = meter.createCounter('alchemyst_errors_total', {
             description: 'Total number of errors encountered'
         });
-
-        console.log('📊 Custom metrics initialized successfully');
+        
+        console.log('✅ Custom metrics initialized:', Object.keys(customMetrics));  
     } catch (error) {
         console.error('❌ Failed to initialize custom metrics:', error);
     }
