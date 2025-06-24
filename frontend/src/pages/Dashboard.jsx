@@ -19,7 +19,6 @@ import {
     Wifi,
     WifiOff
 } from 'lucide-react';
-import JobResultsModal from '../components/Dashboard/JobResultsModal';
 
 
 // Helper functions outside component
@@ -182,9 +181,6 @@ const Dashboard = () => {
             setSystemHealth(data);
         });
     };
-    //  Add state for modal
-    const [selectedJob, setSelectedJob] = useState(null);
-    const [showJobModal, setShowJobModal] = useState(false);
 
     useEffect(() => {
         loadDashboardData();
@@ -205,8 +201,7 @@ const Dashboard = () => {
     }, [jobs]);
 
     const handleViewJob = (job) => {
-        setSelectedJob(job);
-        setShowJobModal(true);
+        navigate(`/result/${job.id}`);
     };
 
     const handleRetryJob = async (job) => {

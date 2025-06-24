@@ -13,6 +13,7 @@ function App() {
           <Route path="/" element={<Navigate to="/research" replace />} />
           <Route path="/research" element={<Research />} />
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/result/:jobId" element={<JobResult />} />
         </Routes>
       </div>
     </Router>
