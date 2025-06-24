@@ -38,6 +38,11 @@ router.get('/detailed', async (req, res) => {
             alchemystService.testConnection()
         ]);
 
+        // Determine overall health
+        const allHealthy = Object.values(health.services).every(service => service.healthy);
+        health.status = allHealthy ? 'healthy' : 'degraded';
+
+        
         // In the detailed health check route, ensure this structure:
         const health = {
             status: allHealthy ? 'healthy' : 'degraded',
@@ -61,9 +66,6 @@ router.get('/detailed', async (req, res) => {
             timestamp: new Date()
         };
 
-        // Determine overall health
-        const allHealthy = Object.values(health.services).every(service => service.healthy);
-        health.status = allHealthy ? 'healthy' : 'degraded';
 
         const statusCode = allHealthy ? 200 : 503;
         res.status(statusCode).json(health);

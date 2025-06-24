@@ -554,12 +554,12 @@ const executeResearchPlan = async (plan, job) => {
     return results;
 };
 
-// Step 1: Group steps by execution strategy (parallel vs sequential)
-const executionGroups = groupStepsForExecution(plan.steps);
+// // Step 1: Group steps by execution strategy (parallel vs sequential)
+// const executionGroups = groupStepsForExecution(plan.steps);
 
-// Step 2: Execute groups with cost monitoring
-let currentProgress = 15; // Starting progress
-const progressIncrement = 55 / totalSteps; // 55% total range for execution
+// // Step 2: Execute groups with cost monitoring
+// let currentProgress = 15; // Starting progress
+// const progressIncrement = 55 / totalSteps; // 55% total range for execution
 
 for (let groupIndex = 0; groupIndex < executionGroups.length; groupIndex++) {
     const group = executionGroups[groupIndex];

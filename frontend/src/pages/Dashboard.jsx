@@ -21,9 +21,6 @@ import {
 } from 'lucide-react';
 import JobResultsModal from '../components/Dashboard/JobResultsModal';
 
-// Add state for modal
-const [selectedJob, setSelectedJob] = useState(null);
-const [showJobModal, setShowJobModal] = useState(false);
 
 // Helper functions outside component
 const loadJobsHelper = async (setJobs) => {
@@ -185,6 +182,9 @@ const Dashboard = () => {
             setSystemHealth(data);
         });
     };
+//  Add state for modal
+    const [selectedJob, setSelectedJob] = useState(null);
+    const [showJobModal, setShowJobModal] = useState(false);
 
     useEffect(() => {
         loadDashboardData();
