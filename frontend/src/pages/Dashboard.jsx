@@ -310,61 +310,62 @@ const Dashboard = () => {
             <div className="container mx-auto px-6 py-16 relative z-10">
                 <div className="max-w-7xl mx-auto">
 
-                    {/* Header */}
-                    <div className="text-center mb-20 relative">
-                        <div className="absolute inset-0 flex items-center justify-center">
-                            <h1 className="text-8xl font-black bg-gradient-to-r from-green-600/20 via-blue-600/20 to-purple-600/20 bg-clip-text text-transparent blur-sm select-none">
-                                DASHBOARD
-                            </h1>
+                    {/* Minimal Header */}
+                    <div className="text-center mb-20">
+                        <div className="flex items-center justify-center mb-8">
+                            <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-3xl flex items-center justify-center shadow-2xl">
+                                <BarChart3 className="w-8 h-8 text-white" />
+                            </div>
                         </div>
 
-                        <div className="relative z-10">
-                            <div className="flex items-center justify-center mb-6">
-                                <div className="w-16 h-16 glass rounded-3xl flex items-center justify-center shadow-2xl animate-pulse">
-                                    <BarChart3 className="w-8 h-8 text-white" />
-                                </div>
-                            </div>
+                        <h1 className="text-6xl font-black mb-6 leading-tight">
+                            <span className="bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+                                Analytics
+                            </span>
+                            <br />
+                            <span className="text-white">Dashboard</span>
+                        </h1>
 
-                            <h1 className="text-7xl font-black mb-8 leading-tight">
-                                <span className="text-white">
-                                    Analytics
+                        <p className="text-xl text-gray-300 max-w-3xl mx-auto leading-relaxed mb-12">
+                            Monitor your research jobs and system performance with real-time analytics
+                        </p>
+
+                        {/* Minimal System Status */}
+                        <div className="grid grid-cols-4 gap-4 max-w-3xl mx-auto mb-8">
+                            <div className="minimal-card p-4 rounded-2xl text-center">
+                                <CheckCircle className={`w-6 h-6 mx-auto mb-2 ${systemHealth.status === 'healthy' ? 'text-green-400' : 'text-red-400'}`} />
+                                <div className="text-lg font-bold text-white">{systemHealth.status === 'healthy' ? 'Healthy' : 'Issues'}</div>
+                                <div className="text-xs text-gray-400">System</div>
+                            </div>
+                            <div className="minimal-card p-4 rounded-2xl text-center">
+                                <Clock className="w-6 h-6 mx-auto mb-2 text-blue-400" />
+                                <div className="text-lg font-bold text-white">{Math.floor((systemHealth.uptime || 0) / 3600)}h</div>
+                                <div className="text-xs text-gray-400">Uptime</div>
+                            </div>
+                            <div className="minimal-card p-4 rounded-2xl text-center">
+                                <Database className={`w-6 h-6 mx-auto mb-2 ${systemHealth.services?.database?.healthy ? 'text-green-400' : 'text-red-400'}`} />
+                                <div className="text-lg font-bold text-white">{systemHealth.services?.database?.healthy ? 'Online' : 'Offline'}</div>
+                                <div className="text-xs text-gray-400">Database</div>
+                            </div>
+                            <div className="minimal-card p-4 rounded-2xl text-center">
+                                <Zap className={`w-6 h-6 mx-auto mb-2 ${systemHealth.services?.alchemyst_api?.healthy ? 'text-green-400' : 'text-red-400'}`} />
+                                <div className="text-lg font-bold text-white">{systemHealth.services?.alchemyst_api?.healthy ? 'Active' : 'Issues'}</div>
+                                <div className="text-xs text-gray-400">API</div>
+                            </div>
+                        </div>
+
+                        <button
+                            onClick={handleRefresh}
+                            disabled={refreshing}
+                            className="minimal-card px-6 py-3 rounded-2xl hover:scale-105 transition-all duration-300"
+                        >
+                            <div className="flex items-center space-x-2">
+                                <RefreshCw className={`w-4 h-4 text-blue-400 ${refreshing ? 'animate-spin' : ''} transition-transform duration-500`} />
+                                <span className="text-sm font-medium text-white">
+                                    {refreshing ? 'Refreshing...' : 'Refresh Data'}
                                 </span>
-                                <br />
-                                <span className="text-white">Dashboard</span>
-                            </h1>
-
-                            <p className="text-2xl text-gray-300 max-w-4xl mx-auto leading-relaxed mb-12">
-                                Monitor your research jobs and system performance with
-                                <span className="text-blue-400 font-semibold"> real-time analytics </span>
-                                and comprehensive insights
-                            </p>
-
-                            {/* System Status Cards */}
-                            <div className="grid grid-cols-4 gap-6 max-w-4xl mx-auto mb-8">
-                                {dashboardStats.map((stat, index) => (
-                                    <div key={index} className="glass-strong p-4 rounded-2xl text-center group hover:scale-105 transition-transform">
-                                        <div className="w-12 h-12 rounded-2xl glass flex items-center justify-center mx-auto mb-3 shadow-lg">
-                                            <stat.icon className="w-6 h-6 text-white" />
-                                        </div>
-                                        <div className="text-lg font-bold text-white group-hover:text-green-400 transition-colors">{stat.value}</div>
-                                        <div className="text-xs text-gray-400">{stat.title}</div>
-                                    </div>
-                                ))}
                             </div>
-
-                            <button
-                                onClick={handleRefresh}
-                                disabled={refreshing}
-                                className="glass-strong px-6 py-3 rounded-2xl hover:scale-105 transition-all duration-300 group"
-                            >
-                                <div className="flex items-center space-x-2">
-                                    <RefreshCw className={`w-4 h-4 text-blue-400 ${refreshing ? 'animate-spin' : 'group-hover:rotate-180'} transition-transform duration-500`} />
-                                    <span className="text-sm font-medium text-white">
-                                        {refreshing ? 'Refreshing...' : 'Refresh Data'}
-                                    </span>
-                                </div>
-                            </button>
-                        </div>
+                        </button>
                     </div>
 
                     {/* Metrics Cards */}
