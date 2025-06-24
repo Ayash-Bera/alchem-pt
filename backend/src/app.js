@@ -289,10 +289,7 @@ async function initializeApp() {
         trackHealthCheck('system_startup', 'success');
         trackApiCall('system_test', 0.1, 0, 0, 'success');
 
-        const { recordTestMetrics } = require('./telemetry/metrics');
-        setTimeout(() => {
-            recordTestMetrics();
-        }, 3000);
+
         // Test metric recording to make them visible
 
         // Always start the HTTP server first (even if services fail)
