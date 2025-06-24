@@ -137,10 +137,10 @@ const endJobSpan = (spanData, jobName, status, result = null) => {
             }
 
             if (status === 'completed') {
-                span.setStatus({ code: trace.SpanStatusCode.OK });
+                span.setStatus({ code: 1 });
             } else if (status === 'failed') {
                 span.setStatus({
-                    code: trace.SpanStatusCode.ERROR,
+                    code: 2,
                     message: result?.error || 'Job failed'
                 });
             }
