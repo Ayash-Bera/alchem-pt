@@ -38,27 +38,21 @@ router.get('/detailed', async (req, res) => {
             alchemystService.testConnection()
         ]);
 
-        // Determine overall health
-        const allHealthy = Object.values(health.services).every(service => service.healthy);
-        health.status = allHealthy ? 'healthy' : 'degraded';
-
-        
-        // In the detailed health check route, ensure this structure:
+        // Build health object first
         const health = {
-            status: allHealthy ? 'healthy' : 'degraded',
             services: {
                 database: {
-                    healthy: dbHealth.healthy,
-                    host: dbHealth.host,
-                    timestamp: dbHealth.timestamp
+                    healthy: dbHealth.status === 'fulfilled' ? dbHealth.value.healthy : false,
+                    host: dbHealth.status === 'fulfilled' ? dbHealth.value.host : 'N/A',
+                    timestamp: dbHealth.status === 'fulfilled' ? dbHealth.value.timestamp : new Date()
                 },
                 rabbitmq: {
-                    healthy: mqHealth.healthy,
-                    timestamp: mqHealth.timestamp
+                    healthy: mqHealth.status === 'fulfilled' ? mqHealth.value.healthy : false,
+                    timestamp: mqHealth.status === 'fulfilled' ? mqHealth.value.timestamp : new Date()
                 },
                 alchemyst_api: {
-                    healthy: apiHealth.healthy,
-                    timestamp: apiHealth.timestamp
+                    healthy: apiHealth.status === 'fulfilled' ? apiHealth.value.success : false,
+                    timestamp: new Date()
                 }
             },
             uptime: process.uptime(),
@@ -66,6 +60,9 @@ router.get('/detailed', async (req, res) => {
             timestamp: new Date()
         };
 
+        // Then determine overall health
+        const allHealthy = Object.values(health.services).every(service => service.healthy);
+        health.status = allHealthy ? 'healthy' : 'degraded';
 
         const statusCode = allHealthy ? 200 : 503;
         res.status(statusCode).json(health);
