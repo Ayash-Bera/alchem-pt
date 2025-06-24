@@ -8,14 +8,15 @@ const promClient = require('prom-client');
 const router = express.Router();
 
 // Prometheus metrics endpoint (exposed by OpenTelemetry)
-router.get('/prometheus', (req, res) => {
-    // This will be handled by the PrometheusExporter in telemetry.js
-    // The actual endpoint is exposed on port 9464 by default
-    res.json({
-        message: 'Prometheus metrics are available at :9464/metrics',
-        endpoint: `http://localhost:9464/metrics`,
-        note: 'This endpoint is exposed by OpenTelemetry PrometheusExporter'
-    });
+router.get('/prometheus', async (req, res) => {
+    try {
+        const promClient = require('prom-client');
+        res.set('Content-Type', promClient.register.contentType);
+        const metrics = await promClient.register.metrics();
+        res.end(metrics);
+    } catch (error) {
+        res.status(500).end(error);
+    }
 });
 
 // Get concurrency metrics

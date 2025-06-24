@@ -36,6 +36,10 @@ const promMetrics = {
         labelNames: ['error_type', 'service']
     })
 };
+promClient.register.registerMetric(promMetrics.jobDuration);
+promClient.register.registerMetric(promMetrics.jobsTotal);
+promClient.register.registerMetric(promMetrics.apiCallDuration);
+promClient.register.registerMetric(promMetrics.errors);
 
 const initializeCustomMetrics = () => {
     try {
@@ -216,6 +220,10 @@ const trackApiCall = (apiName, duration, cost, tokens, status = 'success') => {
             });
         }
 
+        if (promMetrics.apiCallDuration) {
+            promMetrics.apiCallDuration.observe({ api: apiName, status }, duration);
+        }
+
         if (customMetrics.apiCallsTotal) {
             customMetrics.apiCallsTotal.add(1, {
                 api: apiName,
@@ -291,6 +299,10 @@ const trackError = (errorType, service, errorMessage = '') => {
             });
         }
 
+        if (promMetrics.errors) {
+            promMetrics.errors.inc({ error_type: errorType, service });
+        }
+
         // Also create an error span for better tracing
         const span = tracer.startSpan(`error.${errorType}`, {
             attributes: {
@@ -352,6 +364,7 @@ module.exports = {
     updateQueueDepth,
     trackHealthCheck,
     trackError,
+    promMetrics,
     createSpan,
     recordTestMetrics,
     tracer,
