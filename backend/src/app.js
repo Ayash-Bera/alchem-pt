@@ -110,11 +110,7 @@ app.get('/health', (req, res) => {
     });
 });
 
-// After server starts, record initial values
-setTimeout(() => {
-    const { trackHealthCheck } = require('./telemetry/metrics');
-    trackHealthCheck('server_ready', 'success');
-}, 1000);
+
 
 // Basic route for testing (enhanced)
 app.get('/', (req, res) => {
@@ -308,13 +304,6 @@ async function initializeApp() {
         });
 
         // After "✅ HTTP Server running" log
-        setTimeout(() => {
-            const { trackHealthCheck, trackApiCall } = require('./telemetry/metrics');
-            trackHealthCheck('server_startup', 'success');
-            trackApiCall('startup_test', 0.1, 0.001, 10, 'success');
-            console.log('📊 Baseline metrics recorded');
-        }, 2000);
-
         // Initialize socket service early
         socketService.initialize(io);
         logger.info('✅ Socket service initialized');

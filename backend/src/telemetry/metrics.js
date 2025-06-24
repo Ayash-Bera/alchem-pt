@@ -93,7 +93,7 @@ const initializeCustomMetrics = () => {
         });
 
         metricsInitialized = true;
-        console.log('✅ Custom metrics defined:', Object.keys(customMetrics));
+
 
         // Force initial metric values to make them visible in Prometheus
         setTimeout(() => {
@@ -161,212 +161,186 @@ const endJobSpan = (spanData, jobName, status, result = null) => {
                 job_type: jobName,
                 status: status
             });
-            console.log('📊 Job duration recorded:', { jobName, duration, status });
-        }
 
-        if (customMetrics.jobsTotal) {
-            customMetrics.jobsTotal.add(1, {
-                job_type: jobName,
-                status: status
-            });
-            console.log('📊 Job total incremented:', { jobName, status });
-        }
-
-        if (customMetrics.jobsActive) {
-            customMetrics.jobsActive.add(-1, { job_type: jobName });
-            console.log('📊 Job finished, active jobs decreased:', jobName);
-        }
-
-        // Add span attributes
-        if (span) {
-            span.setAttributes({
-                'job.status': status,
-                'job.duration_seconds': duration
-            });
-
-            if (result && result.cost) {
-                span.setAttribute('job.cost_usd', result.cost);
-            }
-
-            if (result && result.tokens) {
-                span.setAttribute('job.tokens_used', result.tokens);
-            }
-
-            if (status === 'completed') {
-                span.setStatus({ code: 1 });
-            } else if (status === 'failed') {
-                span.setStatus({
-                    code: 2,
-                    message: result?.error || 'Job failed'
+            if (customMetrics.jobsTotal) {
+                customMetrics.jobsTotal.add(1, {
+                    job_type: jobName,
+                    status: status
                 });
             }
 
-            span.end();
-        }
-    } catch (error) {
-        console.error('❌ Error ending job span:', error);
-    }
-};
-
-// API call tracking
-const trackApiCall = (apiName, duration, cost, tokens, status = 'success') => {
-    try {
-        console.log('📊 Recording API call metric:', { apiName, duration, cost, tokens, status });
-
-        if (customMetrics.apiCallDuration) {
-            customMetrics.apiCallDuration.record(duration, {
-                api: apiName,
-                status: status
-            });
-        }
-
-        if (promMetrics.apiCallDuration) {
-            promMetrics.apiCallDuration.observe({ api: apiName, status }, duration);
-        }
-
-        if (customMetrics.apiCallsTotal) {
-            customMetrics.apiCallsTotal.add(1, {
-                api: apiName,
-                status: status
-            });
-        }
-
-        if (cost && customMetrics.apiCallCost) {
-            customMetrics.apiCallCost.record(cost, {
-                api: apiName
-            });
-        }
-
-        if (tokens && customMetrics.tokensUsed) {
-            customMetrics.tokensUsed.add(tokens, {
-                api: apiName
-            });
-        }
-        if (cost && promMetrics.apiCallCost) {
-            promMetrics.apiCallCost.observe({ api: apiName }, cost);
-        }
-        // Add after existing OpenTelemetry code:
-        if (promMetrics.apiCallDuration) {
-            promMetrics.apiCallDuration.observe({ api: apiName, status }, duration);
-        }
-
-        // Add after existing OpenTelemetry code:
-
-        console.log('✅ API call metrics recorded successfully');
-    } catch (error) {
-        console.error('❌ Error tracking API call:', error);
-    }
-};
-
-// Queue monitoring
-const updateQueueDepth = (depth, queueType = 'agenda') => {
-    try {
-        if (customMetrics.queueDepth) {
-            customMetrics.queueDepth.add(depth, { queue_type: queueType });
-            console.log('📊 Queue depth updated:', { depth, queueType });
-        }
-    } catch (error) {
-        console.error('❌ Error updating queue depth:', error);
-    }
-};
-
-// Health check tracking
-const trackHealthCheck = (service, status) => {
-    try {
-        console.log('📊 Recording health check:', { service, status });
-
-        if (customMetrics.healthChecks) {
-            customMetrics.healthChecks.add(1, {
-                service: service,
-                status: status
-            });
-            console.log('✅ Health check metric recorded');
-        }
-    } catch (error) {
-        console.error('❌ Error tracking health check:', error);
-    }
-};
-
-// Error tracking
-const trackError = (errorType, service, errorMessage = '') => {
-    try {
-        console.log('📊 Recording error metric:', { errorType, service, errorMessage });
-
-        if (customMetrics.errors) {
-            customMetrics.errors.add(1, {
-                error_type: errorType,
-                service: service
-            });
-        }
-
-        if (promMetrics.errors) {
-            promMetrics.errors.inc({ error_type: errorType, service });
-        }
-
-        // Also create an error span for better tracing
-        const span = tracer.startSpan(`error.${errorType}`, {
-            attributes: {
-                'error.type': errorType,
-                'error.service': service,
-                'error.message': errorMessage
+            if (customMetrics.jobsActive) {
+                customMetrics.jobsActive.add(-1, { job_type: jobName });
+                console.log('📊 Job finished, active jobs decreased:', jobName);
             }
-        });
 
-        span.setStatus({
-            code: 2,
-            message: errorMessage
-        });
+            // Add span attributes
+            if (span) {
+                span.setAttributes({
+                    'job.status': status,
+                    'job.duration_seconds': duration
+                });
 
-        span.end();
-        console.log('✅ Error metrics recorded');
-    } catch (error) {
-        console.error('❌ Error tracking error:', error);
-    }
-};
+                if (result && result.cost) {
+                    span.setAttribute('job.cost_usd', result.cost);
+                }
 
-// Utility function to create custom spans
-const createSpan = (name, attributes = {}) => {
-    try {
-        return tracer.startSpan(name, { attributes });
-    } catch (error) {
-        console.error('❌ Error creating span:', error);
-        return null;
-    }
-};
+                if (result && result.tokens) {
+                    span.setAttribute('job.tokens_used', result.tokens);
+                }
 
-// Force record test metrics (called from app.js)
-const recordTestMetrics = () => {
-    try {
-        console.log('🧪 Recording test metrics for visibility...');
+                if (status === 'completed') {
+                    span.setStatus({ code: 1 });
+                } else if (status === 'failed') {
+                    span.setStatus({
+                        code: 2,
+                        message: result?.error || 'Job failed'
+                    });
+                }
 
-        trackHealthCheck('server_startup', 'success');
-        trackApiCall('startup_test', 0.1, 0.001, 10, 'success');
-        trackError('test_error', 'system', 'This is a test error');
-        updateQueueDepth(0, 'test_queue');
+                span.end();
+            }
+        } catch (error) {
+            console.error('❌ Error ending job span:', error);
+        }
+    };
 
-        // Simulate a quick job
-        const spanData = startJobSpan('test-job', { jobId: 'test-123', topic: 'test' });
-        setTimeout(() => {
-            endJobSpan(spanData, 'test-job', 'completed', { cost: 0.001, tokens: 5 });
-        }, 100);
+    // API call tracking
+    const trackApiCall = (apiName, duration, cost, tokens, status = 'success') => {
+        try {
 
-        console.log('✅ Test metrics recorded - should be visible in Prometheus');
-    } catch (error) {
-        console.error('❌ Error recording test metrics:', error);
-    }
-};
+            if (customMetrics.apiCallDuration) {
+                customMetrics.apiCallDuration.record(duration, {
+                    api: apiName,
+                    status: status
+                });
+            }
 
-module.exports = {
-    initializeCustomMetrics,
-    startJobSpan,
-    endJobSpan,
-    trackApiCall,
-    updateQueueDepth,
-    trackHealthCheck,
-    trackError,
-    promMetrics,
-    createSpan,
-    recordTestMetrics,
-    tracer,
-    meter
-};
+            if (promMetrics.apiCallDuration) {
+                promMetrics.apiCallDuration.observe({ api: apiName, status }, duration);
+            }
+
+            if (customMetrics.apiCallsTotal) {
+                customMetrics.apiCallsTotal.add(1, {
+                    api: apiName,
+                    status: status
+                });
+            }
+
+            if (cost && customMetrics.apiCallCost) {
+                customMetrics.apiCallCost.record(cost, {
+                    api: apiName
+                });
+            }
+
+            if (tokens && customMetrics.tokensUsed) {
+                customMetrics.tokensUsed.add(tokens, {
+                    api: apiName
+                });
+            }
+            if (cost && promMetrics.apiCallCost) {
+                promMetrics.apiCallCost.observe({ api: apiName }, cost);
+            }
+            // Add after existing OpenTelemetry code:
+            if (promMetrics.apiCallDuration) {
+                promMetrics.apiCallDuration.observe({ api: apiName, status }, duration);
+            }
+
+            // Add after existing OpenTelemetry code:
+
+            console.log('✅ API call metrics recorded successfully');
+        } catch (error) {
+            console.error('❌ Error tracking API call:', error);
+        }
+    };
+
+    // Queue monitoring
+    const updateQueueDepth = (depth, queueType = 'agenda') => {
+        try {
+            if (customMetrics.queueDepth) {
+                customMetrics.queueDepth.add(depth, { queue_type: queueType });
+            }
+        } catch (error) {
+            console.error('❌ Error updating queue depth:', error);
+        }
+    };
+
+    // Health check tracking
+    const trackHealthCheck = (service, status) => {
+        try {
+
+            if (customMetrics.healthChecks) {
+                customMetrics.healthChecks.add(1, {
+                    service: service,
+                    status: status
+                });
+                console.log('✅ Health check metric recorded');
+            }
+        } catch (error) {
+            console.error('❌ Error tracking health check:', error);
+        }
+    };
+
+    // Error tracking
+    const trackError = (errorType, service, errorMessage = '') => {
+        try {
+
+            if (customMetrics.errors) {
+                customMetrics.errors.add(1, {
+                    error_type: errorType,
+                    service: service
+                });
+            }
+
+            if (promMetrics.errors) {
+                promMetrics.errors.inc({ error_type: errorType, service });
+            }
+
+            // Also create an error span for better tracing
+            const span = tracer.startSpan(`error.${errorType}`, {
+                attributes: {
+                    'error.type': errorType,
+                    'error.service': service,
+                    'error.message': errorMessage
+                }
+            });
+
+            span.setStatus({
+                code: 2,
+                message: errorMessage
+            });
+
+            span.end();
+            console.log('✅ Error metrics recorded');
+        } catch (error) {
+            console.error('❌ Error tracking error:', error);
+        }
+    };
+
+    // Utility function to create custom spans
+    const createSpan = (name, attributes = {}) => {
+        try {
+            return tracer.startSpan(name, { attributes });
+        } catch (error) {
+            console.error('❌ Error creating span:', error);
+            return null;
+        }
+    };
+
+    // Force record test metrics (called from app.js)
+
+
+    module.exports = {
+        initializeCustomMetrics,
+        startJobSpan,
+        endJobSpan,
+        trackApiCall,
+        updateQueueDepth,
+        trackHealthCheck,
+        trackError,
+        promMetrics,
+        createSpan,
+        recordTestMetrics,
+        tracer,
+        meter
+    };
