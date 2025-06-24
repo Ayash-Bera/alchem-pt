@@ -164,21 +164,31 @@ const checkDatabaseHealth = async () => {
 const insertJobMetric = async (jobData) => {
     try {
         const db = getDatabase();
-        const result = await db.collection('job_metrics').insertOne({
-            job_id: jobData.job_id,
-            job_type: jobData.job_type,
-            status: jobData.status,
-            started_at: new Date(),
-            metadata: jobData.metadata || {},
-            created_at: new Date()
-        });
+        const result = await db.collection('job_metrics').updateOne(
+            { job_id: jobData.job_id },
+            {
+                $set: {
+                    job_type: jobData.job_type,
+                    status: jobData.status,
+                    metadata: jobData.metadata || {},
+                    updated_at: new Date()
+                },
+                $setOnInsert: {
+                    created_at: new Date(),
+                    started_at: new Date(),
+                    cost_usd: 0,
+                    tokens_used: 0,
+                    api_calls: 0
+                }
+            },
+            { upsert: true }
+        );
         return result;
     } catch (error) {
         logger.error('Error inserting job metric:', error);
         throw error;
     }
 };
-
 const updateJobMetric = async (jobId, updates) => {
     try {
         const db = getDatabase();
