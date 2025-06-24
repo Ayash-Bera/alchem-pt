@@ -2,8 +2,20 @@
 const express = require('express');
 const { getDatabase } = require('../config/database');
 const logger = require('../utils/logger');
+const { trackHealthCheck } = require('../telemetry/metrics');
 
 const router = express.Router();
+
+// Prometheus metrics endpoint (exposed by OpenTelemetry)
+router.get('/prometheus', (req, res) => {
+    // This will be handled by the PrometheusExporter in telemetry.js
+    // The actual endpoint is exposed on port 9464 by default
+    res.json({
+        message: 'Prometheus metrics are available at :9464/metrics',
+        endpoint: `http://localhost:9464/metrics`,
+        note: 'This endpoint is exposed by OpenTelemetry PrometheusExporter'
+    });
+});
 
 // Get concurrency metrics
 router.get('/concurrency', async (req, res) => {
@@ -54,6 +66,8 @@ router.get('/concurrency', async (req, res) => {
             }
         ]).toArray();
 
+        trackHealthCheck('concurrency_metrics', 'success');
+
         res.json({
             success: true,
             metrics: {
@@ -65,6 +79,7 @@ router.get('/concurrency', async (req, res) => {
         });
     } catch (error) {
         logger.error('Error getting concurrency metrics:', error);
+        trackHealthCheck('concurrency_metrics', 'error');
         res.status(500).json({
             error: error.message
         });
@@ -210,6 +225,8 @@ router.get('/costs', async (req, res) => {
         const p95_cost = allCosts.length > 0 ?
             allCosts[Math.floor(allCosts.length * 0.95)]?.cost_usd : 0;
 
+        trackHealthCheck('cost_metrics', 'success');
+
         res.json({
             success: true,
             metrics: {
@@ -227,6 +244,7 @@ router.get('/costs', async (req, res) => {
         });
     } catch (error) {
         logger.error('Error getting cost metrics:', error);
+        trackHealthCheck('cost_metrics', 'error');
         res.status(500).json({
             error: error.message
         });
@@ -402,6 +420,8 @@ router.get('/performance', async (req, res) => {
             }
         ]).toArray();
 
+        trackHealthCheck('performance_metrics', 'success');
+
         res.json({
             success: true,
             metrics: {
@@ -415,6 +435,7 @@ router.get('/performance', async (req, res) => {
         });
     } catch (error) {
         logger.error('Error getting performance metrics:', error);
+        trackHealthCheck('performance_metrics', 'error');
         res.status(500).json({
             error: error.message
         });
@@ -435,12 +456,15 @@ router.get('/system', (req, res) => {
             timestamp: new Date()
         };
 
+        trackHealthCheck('system_metrics', 'success');
+
         res.json({
             success: true,
             metrics: systemMetrics
         });
     } catch (error) {
         logger.error('Error getting system metrics:', error);
+        trackHealthCheck('system_metrics', 'error');
         res.status(500).json({
             error: error.message
         });
@@ -462,12 +486,15 @@ router.get('/jobs/:jobId', async (req, res) => {
             });
         }
 
+        trackHealthCheck('job_metrics_lookup', 'success');
+
         res.json({
             success: true,
             metrics: jobMetric
         });
     } catch (error) {
         logger.error(`Error getting job metrics for ${req.params.jobId}:`, error);
+        trackHealthCheck('job_metrics_lookup', 'error');
         res.status(500).json({
             error: error.message
         });
@@ -569,6 +596,8 @@ router.get('/dashboard', async (req, res) => {
             { $sort: { count: -1 } }
         ]).toArray();
 
+        trackHealthCheck('dashboard_metrics', 'success');
+
         res.json({
             success: true,
             dashboard: {
@@ -580,6 +609,7 @@ router.get('/dashboard', async (req, res) => {
         });
     } catch (error) {
         logger.error('Error getting dashboard metrics:', error);
+        trackHealthCheck('dashboard_metrics', 'error');
         res.status(500).json({
             error: error.message
         });

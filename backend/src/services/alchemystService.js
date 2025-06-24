@@ -1,5 +1,6 @@
 const axios = require('axios');
 const logger = require('../utils/logger');
+const { trackApiCall, createSpan, trackError } = require('../telemetry/metrics');
 
 class AlchemystService {
     constructor() {
@@ -17,6 +18,17 @@ class AlchemystService {
     async generateAnalysis(prompt, options = {}, retryCount = 0) {
         const MAX_RETRIES = 3;
         const RETRY_DELAY = 5000;
+        const startTime = Date.now();
+
+        // Create telemetry span for this API call
+        const span = createSpan('alchemyst.api.generate_analysis', {
+            'api.method': 'POST',
+            'api.endpoint': '/chat/generate/stream',
+            'api.retry_count': retryCount,
+            'prompt.length': prompt.length,
+            'options.max_tokens': options.maxTokens || 'default',
+            'options.temperature': options.temperature || 'default'
+        });
 
         try {
             const requestData = {
@@ -83,12 +95,15 @@ class AlchemystService {
                     resolved = true;
 
                     if (!finalContent) {
-                        reject(new Error('No final response received from Alchemyst API'));
+                        const error = new Error('No final response received from Alchemyst API');
+                        trackError('api_empty_response', 'alchemyst', error.message);
+                        reject(error);
                         return;
                     }
 
                     const estimatedTokens = this.estimateTokens(finalContent);
                     const actualTokens = metadata.tokens || estimatedTokens;
+                    const apiCallDuration = (Date.now() - startTime) / 1000;
 
                     const result = {
                         content: finalContent,
@@ -100,12 +115,44 @@ class AlchemystService {
                         timestamp: new Date()
                     };
 
+                    // Track API call metrics
+                    trackApiCall('alchemyst_generate_analysis', apiCallDuration, result.cost, actualTokens, 'success');
+
+                    // Add telemetry attributes
+                    if (span) {
+                        span.setAttributes({
+                            'api.response.tokens': actualTokens,
+                            'api.response.cost_usd': result.cost,
+                            'api.response.content_length': finalContent.length,
+                            'api.response.thinking_steps': thinkingSteps.length,
+                            'api.duration_seconds': apiCallDuration
+                        });
+                        span.setStatus({ code: 1 }); // OK
+                        span.end();
+                    }
+
                     resolve(result);
                 });
 
                 response.data.on('error', (error) => {
                     if (resolved) return;
                     resolved = true;
+
+                    const apiCallDuration = (Date.now() - startTime) / 1000;
+                    trackApiCall('alchemyst_generate_analysis', apiCallDuration, 0, 0, 'error');
+                    trackError('api_stream_error', 'alchemyst', error.message);
+
+                    if (span) {
+                        span.setStatus({
+                            code: 2, // ERROR
+                            message: error.message
+                        });
+                        span.setAttributes({
+                            'api.duration_seconds': apiCallDuration,
+                            'error.type': 'stream_error'
+                        });
+                        span.end();
+                    }
 
                     if ((error.code === 'ECONNRESET' || error.message.includes('aborted')) && retryCount < MAX_RETRIES) {
                         setTimeout(() => {
@@ -122,6 +169,22 @@ class AlchemystService {
                     if (resolved) return;
                     resolved = true;
 
+                    const apiCallDuration = (Date.now() - startTime) / 1000;
+                    trackApiCall('alchemyst_generate_analysis', apiCallDuration, 0, 0, 'timeout');
+                    trackError('api_timeout', 'alchemyst', 'Request timeout');
+
+                    if (span) {
+                        span.setStatus({
+                            code: 2, // ERROR
+                            message: 'Request timeout'
+                        });
+                        span.setAttributes({
+                            'api.duration_seconds': apiCallDuration,
+                            'error.type': 'timeout'
+                        });
+                        span.end();
+                    }
+
                     if (retryCount < MAX_RETRIES) {
                         setTimeout(() => {
                             this.generateAnalysis(prompt, options, retryCount + 1)
@@ -135,6 +198,23 @@ class AlchemystService {
             });
 
         } catch (error) {
+            const apiCallDuration = (Date.now() - startTime) / 1000;
+            trackApiCall('alchemyst_generate_analysis', apiCallDuration, 0, 0, 'error');
+            trackError('api_request_error', 'alchemyst', error.message);
+
+            if (span) {
+                span.setStatus({
+                    code: 2, // ERROR
+                    message: error.message
+                });
+                span.setAttributes({
+                    'api.duration_seconds': apiCallDuration,
+                    'error.type': 'request_error',
+                    'error.code': error.code || 'unknown'
+                });
+                span.end();
+            }
+
             if (retryCount < MAX_RETRIES && (error.code === 'ECONNRESET' || error.message.includes('timeout'))) {
                 await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * (retryCount + 1)));
                 return this.generateAnalysis(prompt, options, retryCount + 1);
@@ -165,11 +245,12 @@ class AlchemystService {
         return baseTokenCost * 0.001;
     }
 
+
     calculateCost(usage) {
         // Keep for backward compatibility
         return this.calculateAlchemystCost(usage.total_tokens || 0);
     }
-    
+
     // Helper method to estimate tokens when not provided
     estimateTokens(text) {
         // Rough estimation: ~4 characters per token
@@ -177,7 +258,13 @@ class AlchemystService {
     }
 
     async generateSummary(text, options = {}) {
-        const prompt = `
+        const span = createSpan('alchemyst.generate_summary', {
+            'summary.input_length': text.length,
+            'summary.max_length': options.maxLength || 500
+        });
+
+        try {
+            const prompt = `
 Please provide a comprehensive summary of the following content:
 
 ${text}
@@ -191,14 +278,41 @@ Summary requirements:
 Please format the summary clearly and concisely.
 `;
 
-        return await this.generateAnalysis(prompt, {
-            maxTokens: Math.min(options.maxLength * 2, 1500),
-            temperature: options.temperature || 0.3
-        });
+            const result = await this.generateAnalysis(prompt, {
+                maxTokens: Math.min(options.maxLength * 2, 1500),
+                temperature: options.temperature || 0.3
+            });
+
+            if (span) {
+                span.setAttributes({
+                    'summary.output_length': result.content.length,
+                    'summary.tokens_used': result.tokens,
+                    'summary.cost': result.cost
+                });
+                span.end();
+            }
+
+            return result;
+        } catch (error) {
+            if (span) {
+                span.setStatus({
+                    code: 2, // ERROR
+                    message: error.message
+                });
+                span.end();
+            }
+            throw error;
+        }
     }
 
     async performResearch(topic, options = {}) {
-        const prompt = `
+        const span = createSpan('alchemyst.perform_research', {
+            'research.topic': topic,
+            'research.depth': options.depth || 'medium'
+        });
+
+        try {
+            const prompt = `
 Conduct comprehensive research on the following topic: ${topic}
 
 Research parameters:
@@ -216,11 +330,33 @@ Please provide:
 Ensure the research is thorough, well-structured, and evidence-based.
 `;
 
-        return await this.generateAnalysis(prompt, {
-            maxTokens: options.maxTokens || 3000,
-            temperature: 0.2
-        });
+            const result = await this.generateAnalysis(prompt, {
+                maxTokens: options.maxTokens || 3000,
+                temperature: 0.2
+            });
+
+            if (span) {
+                span.setAttributes({
+                    'research.output_length': result.content.length,
+                    'research.tokens_used': result.tokens,
+                    'research.cost': result.cost
+                });
+                span.end();
+            }
+
+            return result;
+        } catch (error) {
+            if (span) {
+                span.setStatus({
+                    code: 2, // ERROR
+                    message: error.message
+                });
+                span.end();
+            }
+            throw error;
+        }
     }
+
 
     async analyzeDocument(documentContent, analysisType = 'comprehensive') {
         let prompt = '';
@@ -365,35 +501,38 @@ Current Step: ${step.name}
         return prompt;
     }
 
-calculateCost(usage, apiCall = 'genai.chat.generate') {
-    // Alchemyst API token costs per call
-    const ALCHEMYST_TOKEN_COSTS = {
-        'genai.chat.generate': 1,
-        'genai.chat.web_search': 4,
-        'genai.email.generate': 3,
-        'genai.social.generate': 3,
-        'genai.workflow.step.generate': 7,
-        'genai.leads.get': 3,
-        'genai.leads.augment.by_url': 2,
-        'genai.leads.augment.by_web_search': 4,
-        'genai.email.send': 1,
-        'campaigns.create': 1
-    };
+    calculateCost(usage, apiCall = 'genai.chat.generate') {
+        // Alchemyst API token costs per call
+        const ALCHEMYST_TOKEN_COSTS = {
+            'genai.chat.generate': 1,
+            'genai.chat.web_search': 4,
+            'genai.email.generate': 3,
+            'genai.social.generate': 3,
+            'genai.workflow.step.generate': 7,
+            'genai.leads.get': 3,
+            'genai.leads.augment.by_url': 2,
+            'genai.leads.augment.by_web_search': 4,
+            'genai.email.send': 1,
+            'campaigns.create': 1
+        };
 
-    const tokensPerCall = ALCHEMYST_TOKEN_COSTS[apiCall] || 1;
-    
-    // If you have actual token usage from response, use that
-    // Otherwise estimate based on content length
-    const actualTokens = usage.total_tokens || this.estimateTokens(usage.content || '');
-    
-    return {
-        tokens: actualTokens,
-        cost: tokensPerCall * 0.001, // Assuming $0.001 per token - adjust based on your pricing
-        apiCall: apiCall
-    };
-}
+        const tokensPerCall = ALCHEMYST_TOKEN_COSTS[apiCall] || 1;
+
+        // If you have actual token usage from response, use that
+        // Otherwise estimate based on content length
+        const actualTokens = usage.total_tokens || this.estimateTokens(usage.content || '');
+
+        return {
+            tokens: actualTokens,
+            cost: tokensPerCall * 0.001, // Assuming $0.001 per token - adjust based on your pricing
+            apiCall: apiCall
+        };
+    }
 
     async checkAPIHealth() {
+        const span = createSpan('alchemyst.health_check');
+        const startTime = Date.now();
+
         try {
             const response = await axios.get(`${this.baseURL}/v1/models`, {
                 headers: {
@@ -402,13 +541,44 @@ calculateCost(usage, apiCall = 'genai.chat.generate') {
                 timeout: 5000
             });
 
-            return {
+            const duration = (Date.now() - startTime) / 1000;
+            trackApiCall('alchemyst_health_check', duration, 0, 0, 'success');
+
+            const healthResult = {
                 healthy: true,
                 modelsAvailable: response.data.data?.length || 0,
                 timestamp: new Date()
             };
+
+            if (span) {
+                span.setAttributes({
+                    'health.models_available': healthResult.modelsAvailable,
+                    'health.duration_seconds': duration
+                });
+                span.setStatus({ code: 1 }); // OK
+                span.end();
+            }
+
+            return healthResult;
         } catch (error) {
+            const duration = (Date.now() - startTime) / 1000;
+            trackApiCall('alchemyst_health_check', duration, 0, 0, 'error');
+            trackError('health_check_failed', 'alchemyst', error.message);
+
             logger.error('Alchemyst API health check failed:', error.message);
+
+            if (span) {
+                span.setStatus({
+                    code: 2, // ERROR
+                    message: error.message
+                });
+                span.setAttributes({
+                    'health.duration_seconds': duration,
+                    'error.type': 'health_check_failed'
+                });
+                span.end();
+            }
+
             return {
                 healthy: false,
                 error: error.message,
@@ -416,6 +586,7 @@ calculateCost(usage, apiCall = 'genai.chat.generate') {
             };
         }
     }
+
 
     // Batch processing for multiple requests
     async processBatch(requests, options = {}) {
@@ -461,6 +632,9 @@ calculateCost(usage, apiCall = 'genai.chat.generate') {
     }
 
     async testConnection() {
+        const span = createSpan('alchemyst.test_connection');
+        const startTime = Date.now();
+
         try {
             logger.info('Testing Alchemyst API connection...', {
                 baseURL: this.baseURL,
@@ -489,19 +663,49 @@ calculateCost(usage, apiCall = 'genai.chat.generate') {
                 responseType: 'stream'
             });
 
+            const duration = (Date.now() - startTime) / 1000;
+            trackApiCall('alchemyst_test_connection', duration, 0, 0, 'success');
+
             logger.info('API Response received:', {
                 status: response.status,
                 statusText: response.statusText,
                 contentType: response.headers['content-type']
             });
 
+            if (span) {
+                span.setAttributes({
+                    'test.duration_seconds': duration,
+                    'test.response_status': response.status
+                });
+                span.setStatus({ code: 1 }); // OK
+                span.end();
+            }
+
             return { success: true, response: 'Streaming response received - connection working!' };
         } catch (error) {
+            const duration = (Date.now() - startTime) / 1000;
+            trackApiCall('alchemyst_test_connection', duration, 0, 0, 'error');
+            trackError('connection_test_failed', 'alchemyst', error.message);
+
             logger.error('Alchemyst API test failed:', {
                 message: error.message,
                 status: error.response?.status,
                 data: error.response?.data
             });
+
+            if (span) {
+                span.setStatus({
+                    code: 2, // ERROR
+                    message: error.message
+                });
+                span.setAttributes({
+                    'test.duration_seconds': duration,
+                    'error.type': 'connection_test_failed',
+                    'error.status': error.response?.status || 'unknown'
+                });
+                span.end();
+            }
+
             return { success: false, error: error.message, details: error.response?.data };
         }
     }

@@ -1,3 +1,11 @@
+// CRITICAL: Initialize telemetry FIRST before any other imports
+const { initializeTelemetry } = require('./telemetry/telemetry');
+const { initializeCustomMetrics, trackError } = require('./telemetry/metrics');
+
+// Initialize telemetry early
+initializeTelemetry();
+
+// Now load environment and other modules
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -180,8 +188,11 @@ io.on('connection', (socket) => {
             socketId: socket.id,
             error: error.message
         });
+        // Track socket errors in telemetry
+        trackError('socket_error', 'websocket', error.message);
     });
 });
+
 // After socket service initialization, add:
 setInterval(() => {
     socketService.emitLiveMetrics();
@@ -206,6 +217,7 @@ app.use('*', (req, res) => {
 // Global error handlers
 process.on('uncaughtException', (error) => {
     logger.error('Uncaught Exception:', error);
+    trackError('uncaught_exception', 'process', error.message);
     setTimeout(() => {
         gracefulShutdown().then(() => process.exit(1));
     }, 1000);
@@ -213,6 +225,7 @@ process.on('uncaughtException', (error) => {
 
 process.on('unhandledRejection', (reason, promise) => {
     logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
+    trackError('unhandled_rejection', 'process', reason?.message || 'Unknown rejection');
     setTimeout(() => {
         gracefulShutdown().then(() => process.exit(1));
     }, 1000);
@@ -253,6 +266,7 @@ const shutdown = async () => {
         process.exit(0);
     } catch (error) {
         logger.error('Error during shutdown:', error);
+        trackError('shutdown_error', 'process', error.message);
         process.exit(1);
     }
 };
@@ -261,6 +275,9 @@ const shutdown = async () => {
 async function initializeApp() {
     try {
         logger.info('🚀 Starting Alchemyst Platform...');
+
+        // Initialize custom metrics after telemetry is ready
+        initializeCustomMetrics();
 
         // Always start the HTTP server first (even if services fail)
         server.listen(PORT, HOST, () => {
@@ -281,22 +298,25 @@ async function initializeApp() {
             logger.info('✅ Database connected successfully');
         } catch (error) {
             logger.error('❌ Database connection failed, continuing without it:', error.message);
+            trackError('database_connection', 'mongodb', error.message);
         }
 
         try {
-            logger.info(' Connecting to RabbitMQ...');
+            logger.info('🐰 Connecting to RabbitMQ...');
             await connectRabbitMQ();
-            logger.info('RabbitMQ connected successfully');
+            logger.info('✅ RabbitMQ connected successfully');
         } catch (error) {
             logger.error('❌ RabbitMQ connection failed, continuing without it:', error.message);
+            trackError('rabbitmq_connection', 'rabbitmq', error.message);
         }
 
         try {
-            logger.info(' Initializing AgendaJS...');
+            logger.info('⏰ Initializing AgendaJS...');
             await initializeAgenda();
-            logger.info('AgendaJS initialized successfully');
+            logger.info('✅ AgendaJS initialized successfully');
         } catch (error) {
             logger.error('❌ AgendaJS initialization failed, continuing without it:', error.message);
+            trackError('agenda_initialization', 'agenda', error.message);
         }
 
         // Emit server ready event
@@ -330,6 +350,7 @@ async function initializeApp() {
 
     } catch (error) {
         logger.error('💥 Failed to initialize app:', error);
+        trackError('app_initialization', 'application', error.message);
 
         // Still try to start the basic HTTP server
         server.listen(PORT, HOST, () => {

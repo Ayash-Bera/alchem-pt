@@ -1,3 +1,4 @@
+const { startJobSpan, endJobSpan, createSpan, trackError } = require('../telemetry/metrics');
 const alchemystService = require('../services/alchemystService');
 const logger = require('../utils/logger');
 const { getDatabase } = require('../config/database');
@@ -8,38 +9,86 @@ const deepResearchJob = async (job) => {
 
     logger.info(`Starting deep research job for topic: ${topic}`, { jobId, researchDepth });
 
+    // Start telemetry tracking
+    const spanData = startJobSpan('deep-research', {
+        jobId: String(jobId),
+        topic,
+        researchDepth,
+        requestId
+    });
+
     try {
         job.attrs.progress = 5;
 
-
         // Step 1: Create intelligent research plan
         logger.info('Creating research plan...', { jobId });
+        const planSpan = createSpan('research.create_plan', { topic, depth: researchDepth });
+
         const researchPlan = await createResearchPlan(topic, researchDepth, sources || [], deliverables || ['summary']);
         logger.info('Research plan created successfully', { jobId, stepCount: researchPlan.steps?.length });
 
-        job.attrs.progress = 25;
+        if (planSpan) {
+            planSpan.setAttributes({
+                'research.plan.steps_count': researchPlan.steps?.length || 0,
+                'research.plan.complexity': researchPlan.complexity || 'unknown'
+            });
+            planSpan.end();
+        }
 
+        job.attrs.progress = 25;
 
         // Step 2: Execute with our new intelligent system
         logger.info('Executing research plan...', { jobId });
+        const executionSpan = createSpan('research.execute_plan', {
+            topic,
+            steps_count: researchPlan.steps?.length || 0
+        });
+
         const researchResults = await executeResearchPlan(researchPlan, job);
         logger.info('Research execution completed', { jobId, resultCount: researchResults.length });
 
-        job.attrs.progress = 70;
+        if (executionSpan) {
+            executionSpan.setAttributes({
+                'research.execution.results_count': researchResults.length,
+                'research.execution.total_cost': researchResults.reduce((sum, r) => sum + (r.cost || 0), 0)
+            });
+            executionSpan.end();
+        }
 
+        job.attrs.progress = 70;
 
         // Continue with synthesis...
         logger.info('Synthesizing findings...', { jobId });
+        const synthesisSpan = createSpan('research.synthesize', { topic });
+
         const synthesis = await synthesizeFindings(researchResults, deliverables || ['summary']);
+
+        if (synthesisSpan) {
+            synthesisSpan.setAttributes({
+                'research.synthesis.confidence': synthesis.confidence || 'unknown',
+                'research.synthesis.themes_count': synthesis.keyThemes?.length || 0
+            });
+            synthesisSpan.end();
+        }
 
         job.attrs.progress = 85;
 
-
         logger.info('Generating final deliverables...', { jobId });
+        const deliverablesSpan = createSpan('research.generate_deliverables', {
+            topic,
+            deliverables: deliverables?.join(',') || 'summary'
+        });
+
         const finalReport = await generateResearchDeliverables(topic, researchResults, synthesis, deliverables || ['summary']);
 
-        job.attrs.progress = 95;
+        if (deliverablesSpan) {
+            deliverablesSpan.setAttributes({
+                'research.deliverables.count': Object.keys(finalReport).length
+            });
+            deliverablesSpan.end();
+        }
 
+        job.attrs.progress = 95;
 
         const result = {
             topic,
@@ -58,11 +107,18 @@ const deepResearchJob = async (job) => {
 
         job.attrs.progress = 100;
 
-
         const totalCosts = calculateTotalCosts(researchResults, synthesis, finalReport);
         await updateJobCosts(jobId, totalCosts);
 
         logger.info(`Deep research completed for topic: ${topic}`, { jobId });
+
+        // End telemetry tracking with success
+        endJobSpan(spanData, 'deep-research', 'completed', {
+            cost: totalCosts.totalCost,
+            tokens: totalCosts.totalTokens,
+            steps: researchPlan.steps?.length || 0
+        });
+
         return result;
 
     } catch (error) {
@@ -73,19 +129,37 @@ const deepResearchJob = async (job) => {
             errorName: error.name,
             fullError: JSON.stringify(error, Object.getOwnPropertyNames(error))
         });
+
+        // Track error in telemetry
+        trackError('job_execution_failed', 'deep-research', error.message);
+
         await updateJobCosts(jobId, null, error.message);
+
+        // End telemetry tracking with failure
+        endJobSpan(spanData, 'deep-research', 'failed', { error: error.message });
+
         throw error;
     }
 };
 
 const createResearchPlan = async (topic, depth, sources, deliverables) => {
+    const planSpan = createSpan('research.planning.create', { topic, depth });
+
     try {
         logger.info('Starting research plan creation', { topic, depth });
 
         // Step 1: Analyze topic complexity for cost optimization
         logger.info('Analyzing topic complexity...');
+        const complexitySpan = createSpan('research.planning.analyze_complexity', { topic });
         const complexity = await analyzeTopicComplexity(topic, depth);
         logger.info('Topic complexity analyzed', { complexity });
+        if (complexitySpan) {
+            complexitySpan.setAttributes({
+                'complexity.level': complexity.level,
+                'complexity.score': complexity.score
+            });
+            complexitySpan.end();
+        }
 
         // Step 2: Calculate optimal token distribution
         logger.info('Calculating token distribution...');
@@ -118,6 +192,7 @@ const createResearchPlan = async (topic, depth, sources, deliverables) => {
                 apiUrl: process.env.ALCHEMYST_API_URL,
                 hasApiKey: !!process.env.ALCHEMYST_API_KEY
             });
+            trackError('api_call_failed', 'alchemyst', apiError.message);
             throw new Error(`API call failed: ${apiError.message || 'Unknown API error'}`);
         }
 
@@ -137,7 +212,7 @@ const createResearchPlan = async (topic, depth, sources, deliverables) => {
             estimatedCost: costEstimate.totalEstimatedCost
         });
 
-        return {
+        const plan = {
             topic,
             depth,
             complexity: complexity.level,
@@ -152,6 +227,17 @@ const createResearchPlan = async (topic, depth, sources, deliverables) => {
             createdAt: new Date(),
             planningCost: planResult.cost
         };
+
+        if (planSpan) {
+            planSpan.setAttributes({
+                'plan.steps_count': optimizedSteps.length,
+                'plan.estimated_cost': costEstimate.totalEstimatedCost,
+                'plan.complexity': complexity.level
+            });
+            planSpan.end();
+        }
+
+        return plan;
     } catch (error) {
         logger.error('Error creating cost-optimized research plan:', {
             errorMessage: error.message,
@@ -161,6 +247,17 @@ const createResearchPlan = async (topic, depth, sources, deliverables) => {
             depth,
             fullError: JSON.stringify(error, Object.getOwnPropertyNames(error))
         });
+
+        trackError('research_planning_failed', 'planning', error.message);
+
+        if (planSpan) {
+            planSpan.setStatus({
+                code: 2, // ERROR
+                message: error.message
+            });
+            planSpan.end();
+        }
+
         throw new Error(`Research planning failed: ${error.message || 'Unknown planning error'}`);
     }
 };
@@ -221,10 +318,10 @@ const calculateOptimalTokenDistribution = (depth, complexity) => {
     const totalBudget = baseTokens[depth] * complexityMultiplier[complexity.level];
 
     return {
-        planning: Math.floor(totalBudget * 0.1), // 10% for planning
-        execution: Math.floor(totalBudget * 0.7), // 70% for research steps
-        synthesis: Math.floor(totalBudget * 0.15), // 15% for synthesis
-        deliverables: Math.floor(totalBudget * 0.05), // 5% for final formatting
+        planning: Math.floor(totalBudget * 0.1),
+        execution: Math.floor(totalBudget * 0.7),
+        synthesis: Math.floor(totalBudget * 0.15),
+        deliverables: Math.floor(totalBudget * 0.05),
         total: totalBudget
     };
 };
@@ -470,89 +567,142 @@ const generateDefaultSteps = (depth, tokenBudget) => {
 };
 
 const executeResearchPlan = async (plan, job) => {
-    const results = [];
-    const totalSteps = plan.steps.length;
-    let accumulatedContext = { topic: plan.topic, methodology: plan.methodology };
-    let totalCosts = {
-        totalTokens: 0,
-        totalCost: 0,
-        apiCalls: 0,
-        breakdown: []
-    };
-
-    logger.info(`Starting execution of ${totalSteps} steps`, {
-        jobId: job.attrs._id,
-        estimatedCost: plan.costEstimate?.totalEstimatedCost || 0
+    const executionSpan = createSpan('research.execution.full', {
+        topic: plan.topic,
+        steps_count: plan.steps.length
     });
 
-    const executionGroups = groupStepsForExecution(plan.steps);
-    let currentProgress = 15;
-    const progressIncrement = 55 / totalSteps;
+    try {
+        const results = [];
+        const totalSteps = plan.steps.length;
+        let accumulatedContext = { topic: plan.topic, methodology: plan.methodology };
+        let totalCosts = {
+            totalTokens: 0,
+            totalCost: 0,
+            apiCalls: 0,
+            breakdown: []
+        };
 
-    for (let groupIndex = 0; groupIndex < executionGroups.length; groupIndex++) {
-        const group = executionGroups[groupIndex];
+        logger.info(`Starting execution of ${totalSteps} steps`, {
+            jobId: job.attrs._id,
+            estimatedCost: plan.costEstimate?.totalEstimatedCost || 0
+        });
 
-        try {
-            let groupResults;
+        const executionGroups = groupStepsForExecution(plan.steps);
+        let currentProgress = 15;
+        const progressIncrement = 55 / totalSteps;
 
-            if (group.type === 'parallel' && group.steps.length > 1) {
-                groupResults = await executeParallelSteps(group.steps, accumulatedContext, plan, job.attrs._id);
-            } else {
-                groupResults = await executeSequentialSteps(group.steps, accumulatedContext, plan, job.attrs._id);
-            }
+        for (let groupIndex = 0; groupIndex < executionGroups.length; groupIndex++) {
+            const group = executionGroups[groupIndex];
+            const groupSpan = createSpan(`research.execution.group_${groupIndex}`, {
+                group_type: group.type,
+                steps_count: group.steps.length
+            });
 
-            // Accumulate costs from group results
-            groupResults.forEach(result => {
-                totalCosts.totalTokens += result.tokens || 0;
-                totalCosts.totalCost += result.cost || 0;
-                totalCosts.apiCalls += 1;
-                totalCosts.breakdown.push({
-                    step: result.stepName,
-                    tokens: result.tokens,
-                    cost: result.cost,
-                    apiCall: result.apiCall || 'genai.chat.generate'
+            try {
+                let groupResults;
+
+                if (group.type === 'parallel' && group.steps.length > 1) {
+                    groupResults = await executeParallelSteps(group.steps, accumulatedContext, plan, job.attrs._id);
+                } else {
+                    groupResults = await executeSequentialSteps(group.steps, accumulatedContext, plan, job.attrs._id);
+                }
+
+                // Accumulate costs from group results
+                groupResults.forEach(result => {
+                    totalCosts.totalTokens += result.tokens || 0;
+                    totalCosts.totalCost += result.cost || 0;
+                    totalCosts.apiCalls += 1;
+                    totalCosts.breakdown.push({
+                        step: result.stepName,
+                        tokens: result.tokens,
+                        cost: result.cost,
+                        apiCall: result.apiCall || 'genai.chat.generate'
+                    });
                 });
-            });
 
-            const validatedResults = await validateAndIntegrateResults(groupResults, accumulatedContext);
-            results.push(...validatedResults);
+                const validatedResults = await validateAndIntegrateResults(groupResults, accumulatedContext);
+                results.push(...validatedResults);
 
-            accumulatedContext = await updateExecutionContext(accumulatedContext, validatedResults, plan);
+                accumulatedContext = await updateExecutionContext(accumulatedContext, validatedResults, plan);
 
-            currentProgress += (group.steps.length * progressIncrement);
-            job.attrs.progress = Math.min(currentProgress, 70);
+                currentProgress += (group.steps.length * progressIncrement);
+                job.attrs.progress = Math.min(currentProgress, 70);
 
-            // Update costs in real-time
-            await updateJobCosts(job.attrs._id, totalCosts);
+                // Update costs in real-time
+                await updateJobCosts(job.attrs._id, totalCosts);
 
-        } catch (error) {
-            logger.error(`Execution group ${groupIndex + 1} failed:`, {
-                jobId: job.attrs._id,
-                error: error.message
-            });
+                if (groupSpan) {
+                    groupSpan.setAttributes({
+                        'group.results_count': groupResults.length,
+                        'group.total_cost': groupResults.reduce((sum, r) => sum + (r.cost || 0), 0)
+                    });
+                    groupSpan.end();
+                }
 
-            const recoveryResult = await handleExecutionError(error, group, accumulatedContext, plan);
-            if (recoveryResult.canContinue) {
-                results.push(...recoveryResult.results);
-                accumulatedContext = recoveryResult.updatedContext;
-            } else {
-                throw error;
+            } catch (error) {
+                logger.error(`Execution group ${groupIndex + 1} failed:`, {
+                    jobId: job.attrs._id,
+                    error: error.message
+                });
+
+                trackError('execution_group_failed', 'research_execution', error.message);
+
+                if (groupSpan) {
+                    groupSpan.setStatus({
+                        code: 2, // ERROR
+                        message: error.message
+                    });
+                    groupSpan.end();
+                }
+
+                const recoveryResult = await handleExecutionError(error, group, accumulatedContext, plan);
+                if (recoveryResult.canContinue) {
+                    results.push(...recoveryResult.results);
+                    accumulatedContext = recoveryResult.updatedContext;
+                } else {
+                    throw error;
+                }
             }
         }
+
+        const executionSummary = await generateExecutionSummary(results, plan, totalCosts);
+
+        logger.info(`Execution completed`, {
+            jobId: job.attrs._id,
+            totalSteps: results.length,
+            actualCost: totalCosts.totalCost,
+            totalTokens: totalCosts.totalTokens,
+            apiCalls: totalCosts.apiCalls
+        });
+
+        if (executionSpan) {
+            executionSpan.setAttributes({
+                'execution.total_steps': results.length,
+                'execution.total_cost': totalCosts.totalCost,
+                'execution.total_tokens': totalCosts.totalTokens,
+                'execution.api_calls': totalCosts.apiCalls
+            });
+            executionSpan.end();
+        }
+
+        return results;
+
+    } catch (error) {
+        trackError('research_execution_failed', 'execution', error.message);
+
+        if (executionSpan) {
+            executionSpan.setStatus({
+                code: 2, // ERROR
+                message: error.message
+            });
+            executionSpan.end();
+        }
+
+        throw error;
     }
-
-    const executionSummary = await generateExecutionSummary(results, plan, totalCosts);
-
-    logger.info(`Execution completed`, {
-        jobId: job.attrs._id,
-        totalSteps: results.length,
-        actualCost: totalCosts.totalCost,
-        totalTokens: totalCosts.totalTokens,
-        apiCalls: totalCosts.apiCalls
-    });
-
-    return results;
 };
+
 
 
 
@@ -2006,6 +2156,7 @@ const updateJobCosts = async (jobId, costs, errorMessage = null) => {
         }
     } catch (error) {
         logger.error('Error updating job costs:', error);
+        trackError('cost_update_failed', 'database', error.message);
     }
 };
 
