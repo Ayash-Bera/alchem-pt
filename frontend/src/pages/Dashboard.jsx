@@ -519,14 +519,6 @@ const Dashboard = () => {
                     </div>
                 </div>
             </div>
-            <JobResultsModal
-                job={selectedJob}
-                isOpen={showJobModal}
-                onClose={() => {
-                    setShowJobModal(false);
-                    setSelectedJob(null);
-                }}
-            />
         </div>
     );
 };
