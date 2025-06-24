@@ -30,7 +30,7 @@ const initializeCustomMetrics = () => {
             description: 'Number of currently active jobs'
         });
 
-        customMetrics.queueDepth = meter.createGauge('alchemyst_queue_depth', {
+	customMetrics.queueDepth = meter.createUpDownCounter('alchemyst_queue_depth', {
             description: 'Current depth of job queue'
         });
 

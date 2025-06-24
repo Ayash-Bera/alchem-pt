@@ -98,7 +98,7 @@ const createJobMetricsCollection = async () => {
             { spec: { status: 1 }, options: { name: "status_idx" } },
             { spec: { started_at: 1 }, options: { name: "started_at_idx" } },
             { spec: { completed_at: 1 }, options: { name: "completed_at_idx" } },
-            { spe: { job_type: 1, status: 1 }, options: { name: "job_type_status_idx" } },
+            { spec: { job_type: 1, status: 1 }, options: { name: "job_type_status_idx" } },
             { spec: { started_at: 1, status: 1 }, options: { name: "started_at_status_idx" } }
         ];
 
