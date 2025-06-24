@@ -61,7 +61,7 @@ const ResearchForm = ({ onSubmit, isRunning, onCancel, currentJobId }) => {
                 </div>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-5">
+            <form onSubmit={handleSubmit} className="space-y-6">
                 {/* Topic Input */}
                 <div>
                     <label className="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-wide">
@@ -88,11 +88,10 @@ const ResearchForm = ({ onSubmit, isRunning, onCancel, currentJobId }) => {
                         {depthOptions.map((option) => (
                             <label
                                 key={option.value}
-                                className={`relative p-3 rounded-lg border transition-all cursor-pointer text-center ${
-                                    formData.researchDepth === option.value
+                                className={`relative p-3 rounded-lg border transition-all cursor-pointer text-center ${formData.researchDepth === option.value
                                         ? 'border-blue-400 bg-blue-500/20'
                                         : 'border-white/10 bg-white/5 hover:border-white/20'
-                                }`}
+                                    }`}
                             >
                                 <input
                                     type="radio"
@@ -100,7 +99,7 @@ const ResearchForm = ({ onSubmit, isRunning, onCancel, currentJobId }) => {
                                     value={option.value}
                                     checked={formData.researchDepth === option.value}
                                     onChange={handleInputChange}
-                                   disabled={isRunning}
+                                    disabled={isRunning}
                                     className="sr-only"
                                 />
                                 <div className="text-sm font-medium text-white">{option.label}</div>
@@ -120,17 +119,15 @@ const ResearchForm = ({ onSubmit, isRunning, onCancel, currentJobId }) => {
                             <div
                                 key={option.id}
                                 onClick={() => !isRunning && handleDeliverablesChange(option.id)}
-                                className={`flex items-center space-x-2 p-3 rounded-lg transition-all cursor-pointer minimal-card ${
-                                    formData.deliverables.includes(option.id)
+                                className={`flex items-center space-x-2 p-2 rounded-lg transition-all cursor-pointer minimal-card ${formData.deliverables.includes(option.id)
                                         ? 'border-green-400/50 bg-green-500/10'
                                         : 'hover:bg-white/5'
-                                }`}
+                                    }`}
                             >
-                                <div className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-all ${
-                                    formData.deliverables.includes(option.id)
+                                <div className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-all ${formData.deliverables.includes(option.id)
                                         ? 'border-green-400 bg-green-400'
                                         : 'border-white/30'
-                                }`}>
+                                    }`}>
                                     {formData.deliverables.includes(option.id) && (
                                         <svg className="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20">
                                             <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
@@ -169,12 +166,12 @@ const ResearchForm = ({ onSubmit, isRunning, onCancel, currentJobId }) => {
                 </div>
 
                 {/* Submit Button - Compact */}
-                <div className="pt-2">
+                <div className="pt-6">
                     {!isRunning ? (
                         <button
                             type="submit"
                             disabled={!formData.topic.trim()}
-                            className="w-full flex items-center justify-center space-x-2 px-6 py-4 rounded-xl font-medium shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white border border-white/20 backdrop-blur-sm"
+                            className="w-full flex items-center justify-center space-x-2 px-4 py-3 rounded-2xl font-medium shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white border border-white/20 backdrop-blur-sm"
                         >
                             <Play size={18} />
                             <span>Start Research</span>
@@ -183,7 +180,7 @@ const ResearchForm = ({ onSubmit, isRunning, onCancel, currentJobId }) => {
                         <button
                             type="button"
                             onClick={() => onCancel(currentJobId)}
-                            className="w-full flex items-center justify-center space-x-2 px-6 py-4 rounded-xl font-medium shadow-lg transition-all duration-300 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white border border-white/20 backdrop-blur-sm"
+                            className="w-full flex items-center justify-center space-x-2 px-4 py-3 rounded-2xl font-medium shadow-lg transition-all duration-300 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white border border-white/20 backdrop-blur-sm"
                         >
                             <Square size={18} />
                             <span>Stop Research</span>
