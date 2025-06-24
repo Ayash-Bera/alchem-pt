@@ -243,9 +243,6 @@ const trackApiCall = (apiName, duration, cost, tokens, status = 'success') => {
         }
 
         // Add after existing OpenTelemetry code:
-        if (promMetrics.errors) {
-            promMetrics.errors.inc({ error_type: errorType, service });
-        }
 
         console.log('✅ API call metrics recorded successfully');
     } catch (error) {
