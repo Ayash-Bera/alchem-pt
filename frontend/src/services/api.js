@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://35.209.5.151:8080/api';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://34.68.86.10:8080/api';
 console.log('🌐 API Base URL:', API_BASE_URL);
 
 // Create axios instance with default configuration
