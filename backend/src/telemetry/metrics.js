@@ -337,7 +337,6 @@ const endJobSpan = (spanData, jobName, status, result = null) => {
         trackError,
         promMetrics,
         createSpan,
-        recordTestMetrics,
         tracer,
         meter
     };
