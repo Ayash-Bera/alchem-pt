@@ -1273,3 +1273,78 @@ button:disabled {
     margin-bottom: 3rem;
   }
 }
+/* Form Section Improvements */
+.form-section {
+  margin-bottom: 2rem;
+}
+
+.form-label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  margin-bottom: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Enhanced Glass Input */
+.glass-input {
+  background: rgba(255, 255, 255, 0.08) !important;
+  backdrop-filter: blur(10px) !important;
+  border: 2px solid rgba(255, 255, 255, 0.2) !important;
+  color: #ffffff !important;
+  border-radius: 1rem !important;
+  transition: all 0.3s ease !important;
+  font-family: inherit !important;
+}
+
+.glass-input:focus {
+  border-color: #3b82f6 !important;
+  outline: none !important;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3) !important;
+  background: rgba(255, 255, 255, 0.15) !important;
+}
+
+/* Remove problematic classes that might conflict */
+.deliverables-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+}
+
+.deliverable-item {
+  padding: 1rem;
+  border-radius: 0.75rem;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.05);
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.deliverable-item:hover {
+  border-color: rgba(34, 197, 94, 0.3);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.deliverable-item.selected {
+  border-color: #22c55e;
+  background: rgba(34, 197, 94, 0.2);
+  box-shadow: 0 8px 25px rgba(34, 197, 94, 0.25);
+}
+
+/* Fix for radio button styling */
+input[type="radio"]:checked+.radio-visual {
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+  border-color: #3b82f6;
+}
+
+/* Smooth transitions for all interactive elements */
+.cursor-pointer {
+  cursor: pointer;
+}
+
+.cursor-pointer:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}

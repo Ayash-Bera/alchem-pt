@@ -36,9 +36,9 @@ const JobResultsModal = ({ job, isOpen, onClose }) => {
     };
 
     return (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="glass max-w-4xl w-full max-h-[90vh] rounded-3xl flex flex-col overflow-hidden">
-                
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4">
+            <div className="glass max-w-4xl w-full max-h-[85vh] rounded-3xl flex flex-col overflow-hidden">
+
                 {/* Header */}
                 <div className="flex items-center justify-between p-6 border-b border-white/10">
                     <div>
@@ -68,11 +68,10 @@ const JobResultsModal = ({ job, isOpen, onClose }) => {
                         <button
                             key={tab}
                             onClick={() => setActiveTab(tab)}
-                            className={`px-6 py-3 text-sm font-medium capitalize transition-colors ${
-                                activeTab === tab
-                                    ? 'text-blue-400 border-b-2 border-blue-400 bg-blue-500/10'
-                                    : 'text-gray-400 hover:text-white'
-                            }`}
+                            className={`px-6 py-3 text-sm font-medium capitalize transition-colors ${activeTab === tab
+                                ? 'text-blue-400 border-b-2 border-blue-400 bg-blue-500/10'
+                                : 'text-gray-400 hover:text-white'
+                                }`}
                         >
                             {tab}
                         </button>
@@ -80,7 +79,7 @@ const JobResultsModal = ({ job, isOpen, onClose }) => {
                 </div>
 
                 {/* Scrollable Content Area */}
-                <div className="p-6 overflow-y-auto flex-1 min-h-0">
+                <div className="p-6 overflow-y-auto flex-1 min-h-0 max-h-full">
                     {activeTab === 'result' && (
                         <div className="space-y-6">
                             {job.result ? (
@@ -89,10 +88,10 @@ const JobResultsModal = ({ job, isOpen, onClose }) => {
                                         <div className="space-y-6">
                                             {Object.entries(job.result.deliverables).map(([key, content]) => (
                                                 <div key={key} className="glass-strong p-6 rounded-2xl">
-                                                   <h3 className="text-lg font-semibold text-white mb-4 capitalize">
+                                                    <h3 className="text-lg font-semibold text-white mb-4 capitalize">
                                                         {key.replace(/([A-Z])/g, ' $1').trim()}
                                                     </h3>
-                                                    <div className="prose prose-invert max-w-none overflow-auto">
+                                                    <div className="prose prose-invert max-w-none max-h-64 overflow-y-auto">
                                                         {typeof content === 'object' && content.content ? (
                                                             formatContent(content.content)
                                                         ) : typeof content === 'string' ? (
@@ -110,7 +109,7 @@ const JobResultsModal = ({ job, isOpen, onClose }) => {
                                     {job.result.synthesis && (
                                         <div className="glass-strong p-6 rounded-2xl">
                                             <h3 className="text-lg font-semibold text-white mb-4">Research Synthesis</h3>
-                                            <div className="prose prose-invert max-w-none overflow-auto">
+                                            <div className="prose prose-invert max-w-none max-h-64 overflow-y-auto">
                                                 {formatContent(job.result.synthesis.content)}
                                             </div>
                                         </div>

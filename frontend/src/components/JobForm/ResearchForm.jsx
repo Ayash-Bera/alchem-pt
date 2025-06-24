@@ -86,34 +86,45 @@ const ResearchForm = ({ onSubmit, isRunning, onCancel, currentJobId }) => {
                 {/* Research Depth */}
                 <div className="form-section">
                     <label className="form-label">Research Depth</label>
-                    <div className="space-y-3">
+                    <div className="space-y-4">
                         {depthOptions.map((option) => (
-                            <label
+                            <div
                                 key={option.value}
-                                className={`block p-4 rounded-xl border transition-all cursor-pointer ${formData.researchDepth === option.value
-                                    ? 'border-blue-400 bg-blue-500/10 shadow-lg shadow-blue-500/20'
-                                    : 'border-white/20 bg-white/5 hover:border-white/30 hover:bg-white/10'
+                                className={`relative p-4 rounded-xl border-2 transition-all cursor-pointer ${formData.researchDepth === option.value
+                                    ? 'border-blue-400 bg-blue-500/20 shadow-lg shadow-blue-500/25'
+                                    : 'border-white/20 bg-white/5 hover:border-blue-300 hover:bg-white/10'
                                     }`}
+                                onClick={() => !isRunning && setFormData(prev => ({ ...prev, researchDepth: option.value }))}
                             >
-                                <input
-                                    type="radio"
-                                    name="researchDepth"
-                                    value={option.value}
-                                    checked={formData.researchDepth === option.value}
-                                    onChange={handleInputChange}
-                                    disabled={isRunning}
-                                    className="sr-only"
-                                />
                                 <div className="flex items-center justify-between">
-                                    <div>
-                                        <div className="font-semibold text-white">{option.label}</div>
-                                        <div className="text-sm text-gray-300">{option.description}</div>
+                                    <div className="flex items-center space-x-4">
+                                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${formData.researchDepth === option.value
+                                            ? 'border-blue-400 bg-blue-400'
+                                            : 'border-white/40'
+                                            }`}>
+                                            {formData.researchDepth === option.value && (
+                                                <div className="w-2 h-2 bg-white rounded-full"></div>
+                                            )}
+                                        </div>
+                                        <div>
+                                            <div className="text-lg font-semibold text-white mb-1">{option.label}</div>
+                                            <div className="text-sm text-gray-300">{option.description}</div>
+                                        </div>
                                     </div>
                                     <div className="text-right">
                                         <div className="text-sm font-medium text-blue-400">{option.time}</div>
                                     </div>
                                 </div>
-                            </label>
+                                <input
+                                    type="radio"
+                                    name="researchDepth"
+                                    value={option.value}
+                                    checked={formData.researchDepth === option.value}
+                                    onChange={() => { }} // Handled by onClick above
+                                    disabled={isRunning}
+                                    className="sr-only"
+                                />
+                            </div>
                         ))}
                     </div>
                 </div>
@@ -121,25 +132,38 @@ const ResearchForm = ({ onSubmit, isRunning, onCancel, currentJobId }) => {
                 {/* Deliverables */}
                 <div className="form-section">
                     <label className="form-label">Deliverables</label>
-                    <div className="deliverables-grid">
+                    <div className="grid grid-cols-2 gap-4">
                         {deliverableOptions.map((option) => (
-                            <label
+                            <div
                                 key={option.id}
-                                className={`deliverable-item ${formData.deliverables.includes(option.id) ? 'selected' : ''
+                                className={`p-4 rounded-xl border-2 transition-all cursor-pointer ${formData.deliverables.includes(option.id)
+                                    ? 'border-green-400 bg-green-500/20 shadow-lg shadow-green-500/25'
+                                    : 'border-white/20 bg-white/5 hover:border-green-300 hover:bg-white/10'
                                     }`}
+                                onClick={() => !isRunning && handleDeliverablesChange(option.id)}
                             >
                                 <div className="flex items-center space-x-3">
-                                    <input
-                                        type="checkbox"
-                                        checked={formData.deliverables.includes(option.id)}
-                                        onChange={() => handleDeliverablesChange(option.id)}
-                                        disabled={isRunning}
-                                        className="custom-checkbox"
-                                    />
+                                    <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${formData.deliverables.includes(option.id)
+                                        ? 'border-green-400 bg-green-400'
+                                        : 'border-white/40'
+                                        }`}>
+                                        {formData.deliverables.includes(option.id) && (
+                                            <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                            </svg>
+                                        )}
+                                    </div>
                                     <span className="text-2xl">{option.icon}</span>
                                     <span className="text-sm font-medium text-white">{option.label}</span>
                                 </div>
-                            </label>
+                                <input
+                                    type="checkbox"
+                                    checked={formData.deliverables.includes(option.id)}
+                                    onChange={() => { }} // Handled by onClick above
+                                    disabled={isRunning}
+                                    className="sr-only"
+                                />
+                            </div>
                         ))}
                     </div>
                 </div>
@@ -152,7 +176,7 @@ const ResearchForm = ({ onSubmit, isRunning, onCancel, currentJobId }) => {
                         value={formData.priority}
                         onChange={handleInputChange}
                         disabled={isRunning}
-                        className="w-full px-6 py-4 rounded-2xl glass-input text-white text-base"
+                        className="w-full px-6 py-4 rounded-2xl glass-input text-white text-base appearance-none bg-no-repeat bg-right-4 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIiIGhlaWdodD0iOCIgdmlld0JveD0iMCAwIDEyIDgiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxwYXRoIGQ9Ik0xIDFMNiA2TDExIDEiIHN0cm9rZT0iIzlDQTNBRiIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz4KPC9zdmc+')]"
                     >
                         <option value="low">Low Priority</option>
                         <option value="normal">Normal Priority</option>
