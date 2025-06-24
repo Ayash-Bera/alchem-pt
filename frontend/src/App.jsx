@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Research from './pages/Research';
 import Dashboard from './pages/Dashboard';
+import JobResult from './pages/JobResult';
 import Navbar from './components/Layout/Navbar';
 
 function App() {
