@@ -182,7 +182,7 @@ const Dashboard = () => {
             setSystemHealth(data);
         });
     };
-//  Add state for modal
+    //  Add state for modal
     const [selectedJob, setSelectedJob] = useState(null);
     const [showJobModal, setShowJobModal] = useState(false);
 
@@ -294,7 +294,7 @@ const Dashboard = () => {
     }
 
     return (
-	<div className="min-h-screen relative">
+        <div className="min-h-screen relative">
             {/* Dynamic background */}
             <div
                 className="fixed inset-0 opacity-30 pointer-events-none"
@@ -323,13 +323,13 @@ const Dashboard = () => {
 
                         <div className="relative z-10">
                             <div className="flex items-center justify-center mb-6">
-                                <div className="w-16 h-16 bg-gradient-to-br from-green-500 to-blue-600 rounded-3xl flex items-center justify-center shadow-2xl shadow-green-500/25 animate-pulse">
+                                <div className="w-16 h-16 glass rounded-3xl flex items-center justify-center shadow-2xl animate-pulse">
                                     <BarChart3 className="w-8 h-8 text-white" />
                                 </div>
                             </div>
 
                             <h1 className="text-7xl font-black mb-8 leading-tight">
-                                <span className="bg-gradient-to-r from-green-400 via-blue-400 to-purple-400 bg-clip-text text-transparent">
+                                <span className="text-white">
                                     Analytics
                                 </span>
                                 <br />
@@ -338,7 +338,7 @@ const Dashboard = () => {
 
                             <p className="text-2xl text-gray-300 max-w-4xl mx-auto leading-relaxed mb-12">
                                 Monitor your research jobs and system performance with
-                                <span className="text-transparent bg-gradient-to-r from-green-400 to-blue-400 bg-clip-text font-semibold"> real-time analytics </span>
+                                <span className="text-blue-400 font-semibold"> real-time analytics </span>
                                 and comprehensive insights
                             </p>
 
@@ -346,7 +346,7 @@ const Dashboard = () => {
                             <div className="grid grid-cols-4 gap-6 max-w-4xl mx-auto mb-8">
                                 {dashboardStats.map((stat, index) => (
                                     <div key={index} className="glass-strong p-4 rounded-2xl text-center group hover:scale-105 transition-transform">
-                                        <div className={`w-12 h-12 rounded-2xl bg-gradient-to-r ${stat.color} flex items-center justify-center mx-auto mb-3 shadow-lg`}>
+                                        <div className="w-12 h-12 rounded-2xl glass flex items-center justify-center mx-auto mb-3 shadow-lg">
                                             <stat.icon className="w-6 h-6 text-white" />
                                         </div>
                                         <div className="text-lg font-bold text-white group-hover:text-green-400 transition-colors">{stat.value}</div>

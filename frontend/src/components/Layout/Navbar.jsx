@@ -10,7 +10,7 @@ const Navbar = () => {
             <div className="container mx-auto px-6 py-6">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-4">
-                        <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-xl">
+                        <div className="w-12 h-12 glass rounded-2xl flex items-center justify-center shadow-xl">
                             <Sparkles className="text-white w-6 h-6" />
                         </div>
                         <div>
@@ -23,7 +23,7 @@ const Navbar = () => {
                         <Link
                             to="/research"
                             className={`px-8 py-3 rounded-xl transition-all font-semibold text-sm ${location.pathname === '/research'
-                                ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-lg shadow-blue-500/25'
+                                ? 'bg-blue-600 text-white shadow-lg'
                                 : 'text-gray-300 hover:text-white hover:bg-white/10'
                                 }`}
                         >
@@ -32,7 +32,7 @@ const Navbar = () => {
                         <Link
                             to="/dashboard"
                             className={`px-8 py-3 rounded-xl transition-all font-semibold text-sm ${location.pathname === '/dashboard'
-                                ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-lg shadow-blue-500/25'
+                                ? 'bg-blue-600 text-white shadow-lg'
                                 : 'text-gray-300 hover:text-white hover:bg-white/10'
                                 }`}
                         >

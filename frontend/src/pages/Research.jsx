@@ -231,7 +231,7 @@ const Research = () => {
                             </div>
 
                             <h1 className="text-7xl font-black mb-8 leading-tight">
-                                <span className="bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
+                                <span className="text-white">
                                     Deep Research
                                 </span>
                                 <br />
@@ -240,7 +240,7 @@ const Research = () => {
 
                             <p className="text-2xl text-gray-300 max-w-4xl mx-auto leading-relaxed mb-12">
                                 Harness the power of AI to create
-                                <span className="text-transparent bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text font-semibold"> comprehensive research reports </span>
+                                <span className="text-blue-400 font-semibold"> comprehensive research reports </span>
                                 with real-time multi-step analysis and intelligent insights
                             </p>
 
@@ -248,7 +248,7 @@ const Research = () => {
                             <div className="flex items-center justify-center space-x-8 mb-8">
                                 {features.map((feature, index) => (
                                     <div key={index} className="flex items-center space-x-3 group">
-                                        <div className={`w-10 h-10 rounded-2xl bg-gradient-to-r ${feature.color} flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform`}>
+                                        <div className="w-10 h-10 rounded-2xl glass flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
                                             <feature.icon className="w-5 h-5 text-white" />
                                         </div>
                                         <div className="text-left">
@@ -397,8 +397,8 @@ const Research = () => {
                                                                 {['Research', 'Analyze', 'Synthesize', 'Report'].map((step, index) => (
                                                                     <div key={index} className="flex flex-col items-center space-y-2">
                                                                         <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${(currentJob?.progress || 0) > (index * 25)
-                                                                                ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-lg'
-                                                                                : 'bg-gray-700 text-gray-400'
+                                                                            ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-lg'
+                                                                            : 'bg-gray-700 text-gray-400'
                                                                             }`}>
                                                                             {index + 1}
                                                                         </div>
@@ -432,8 +432,8 @@ const Research = () => {
             {/* Enhanced Connection Status Indicator */}
             <div className="fixed bottom-8 right-8 z-50">
                 <div className={`flex items-center space-x-4 px-6 py-4 rounded-2xl glass shadow-2xl border transition-all duration-300 ${isConnected
-                        ? 'border-green-500/30 shadow-green-500/10'
-                        : 'border-red-500/30 shadow-red-500/10'
+                    ? 'border-green-500/30 shadow-green-500/10'
+                    : 'border-red-500/30 shadow-red-500/10'
                     }`}>
                     <div className="relative">
                         <div className={`w-4 h-4 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'
