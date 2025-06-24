@@ -66,6 +66,9 @@ router.get('/detailed', async (req, res) => {
 
         const statusCode = allHealthy ? 200 : 503;
         res.status(statusCode).json(health);
+        // In the detailed health check route, after res.status(statusCode).json(health);
+        const { trackHealthCheck } = require('../telemetry/metrics');
+        trackHealthCheck('detailed_health_check', allHealthy ? 'success' : 'failed');
     } catch (error) {
         logger.error('Detailed health check failed:', error);
         res.status(500).json({

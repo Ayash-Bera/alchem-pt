@@ -300,6 +300,14 @@ async function initializeApp() {
             logger.info(`🔗 Test endpoint: http://35.209.5.151:${PORT}/test`);
         });
 
+        // After "✅ HTTP Server running" log
+        setTimeout(() => {
+            const { trackHealthCheck, trackApiCall } = require('./telemetry/metrics');
+            trackHealthCheck('server_startup', 'success');
+            trackApiCall('startup_test', 0.1, 0.001, 10, 'success');
+            console.log('📊 Baseline metrics recorded');
+        }, 2000);
+        
         // Initialize socket service early
         socketService.initialize(io);
         logger.info('✅ Socket service initialized');
