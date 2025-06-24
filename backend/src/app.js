@@ -42,7 +42,9 @@ const corsOptions = {
         FRONTEND_URL,
         'http://localhost:3000',
         'http://35.209.5.151:3000',
-        'http://127.0.0.1:3000'
+        'http://127.0.0.1:3000',
+        'http://10.0.0.4:3000',  // Add Grafana internal IP
+        'http://35.209.99.170:3000'
     ],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -290,7 +292,7 @@ async function initializeApp() {
         const { trackApiCall, trackHealthCheck } = require('./telemetry/metrics');
         trackHealthCheck('system_startup', 'success');
         trackApiCall('system_test', 0.1, 0, 0, 'success');
-        
+
         const { recordTestMetrics } = require('./telemetry/metrics');
         setTimeout(() => {
             recordTestMetrics();
