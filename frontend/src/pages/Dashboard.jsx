@@ -19,6 +19,8 @@ import {
     Wifi,
     WifiOff
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+
 
 
 // Helper functions outside component
@@ -119,7 +121,7 @@ const Dashboard = () => {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
-
+    const navigate = useNavigate();
     // Mouse tracking
     useEffect(() => {
         const handleMouseMove = (e) => {
