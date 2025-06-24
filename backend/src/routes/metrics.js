@@ -174,15 +174,25 @@ router.get('/costs', async (req, res) => {
                     _id: null,
                     avg_cost_per_second: {
                         $avg: {
-                            $divide: [
-                                '$cost_usd',
-                                { $divide: ['$duration_ms', 1000] }
-                            ]
+                            $cond: {
+                                if: { $gt: ['$duration_ms', 0] },
+                                then: {
+                                    $divide: [
+                                        '$cost_usd',
+                                        { $divide: ['$duration_ms', 1000] }
+                                    ]
+                                },
+                                else: 0
+                            }
                         }
                     },
                     avg_tokens_per_dollar: {
                         $avg: {
-                            $divide: ['$tokens_used', '$cost_usd']
+                            $cond: {
+                                if: { $gt: ['$cost_usd', 0] },
+                                then: { $divide: ['$tokens_used', '$cost_usd'] },
+                                else: 0
+                            }
                         }
                     }
                 }
