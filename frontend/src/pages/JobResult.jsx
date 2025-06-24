@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import ReactMarkdown from 'react-markdown';
 import { jobsAPI } from '../services/api';
 
 const JobResult = () => {
@@ -34,7 +35,9 @@ const JobResult = () => {
                     <div key={key} className="mb-8">
                         <h2 className="text-xl font-semibold mb-4 capitalize">{key}</h2>
                         <div className="prose prose-invert max-w-none">
-                            {typeof content === 'object' ? content.content : content}
+                            <ReactMarkdown>
+                                {typeof content === 'object' ? content.content : content}
+                            </ReactMarkdown>
                         </div>
                     </div>
                 ))}
