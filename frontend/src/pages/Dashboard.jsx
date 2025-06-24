@@ -294,7 +294,7 @@ const Dashboard = () => {
     }
 
     return (
-        <div className="min-h-screen relative overflow-hidden">
+	<div className="min-h-screen relative">
             {/* Dynamic background */}
             <div
                 className="fixed inset-0 opacity-30 pointer-events-none"
