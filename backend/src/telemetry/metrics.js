@@ -238,7 +238,7 @@ const trackError = (errorType, service, errorMessage = '') => {
         });
 
         span.setStatus({
-            code: trace.SpanStatusCode.ERROR,
+            code: 2,
             message: errorMessage
         });
 

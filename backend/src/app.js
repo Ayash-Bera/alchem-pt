@@ -69,7 +69,7 @@ app.use((req, res, next) => {
 // Rate limiting with more lenient settings for development
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 200, // Increased limit for testing
+    max: 20000, // Increased limit for testing
     message: {
         error: 'Too many requests from this IP, please try again later.'
     },
