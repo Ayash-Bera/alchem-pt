@@ -8,14 +8,12 @@ const tracer = trace.getTracer('alchemyst-platform', '1.0.0');
 
 // Custom metrics
 let customMetrics = {};
+let metricsInitialized = false;
 
 const initializeCustomMetrics = () => {
-    if (!isInitializedTelemetry()) {
-        console.log('⚠️ OpenTelemetry not initialized, skipping custom metrics');
-        return;
-    }
-
     try {
+        console.log('🔧 Initializing custom metrics...');
+
         // Job processing metrics
         customMetrics.jobDuration = meter.createHistogram('alchemyst_job_duration_seconds', {
             description: 'Duration of job processing in seconds',
@@ -30,7 +28,7 @@ const initializeCustomMetrics = () => {
             description: 'Number of currently active jobs'
         });
 
-	customMetrics.queueDepth = meter.createUpDownCounter('alchemyst_queue_depth', {
+        customMetrics.queueDepth = meter.createUpDownCounter('alchemyst_queue_depth', {
             description: 'Current depth of job queue'
         });
 
@@ -62,17 +60,40 @@ const initializeCustomMetrics = () => {
         customMetrics.errors = meter.createCounter('alchemyst_errors_total', {
             description: 'Total number of errors encountered'
         });
-        
-        console.log('✅ Custom metrics initialized:', Object.keys(customMetrics));  
+
+        metricsInitialized = true;
+        console.log('✅ Custom metrics defined:', Object.keys(customMetrics));
+
+        // Force initial metric values to make them visible in Prometheus
+        setTimeout(() => {
+            try {
+                console.log('📊 Recording initial metric values...');
+
+                // Record baseline values
+                customMetrics.healthChecks.add(1, { service: 'system', status: 'init' });
+                customMetrics.jobsTotal.add(0, { job_type: 'init', status: 'completed' });
+                customMetrics.jobsActive.add(0, { job_type: 'init' });
+                customMetrics.apiCallsTotal.add(1, { api: 'system_init', status: 'success' });
+                customMetrics.apiCallDuration.record(0.1, { api: 'system_init', status: 'success' });
+                customMetrics.apiCallCost.record(0.001, { api: 'system_init' });
+                customMetrics.tokensUsed.add(10, { api: 'system_init' });
+                customMetrics.errors.add(0, { error_type: 'init', service: 'system' });
+                customMetrics.queueDepth.add(0, { queue_type: 'agenda' });
+
+                console.log('✅ Initial metric values recorded successfully');
+            } catch (error) {
+                console.error('❌ Error recording initial metrics:', error);
+            }
+        }, 1000);
+
     } catch (error) {
         console.error('❌ Failed to initialize custom metrics:', error);
+        metricsInitialized = false;
     }
 };
 
 // Job tracking functions
 const startJobSpan = (jobName, jobData) => {
-    if (!isInitializedTelemetry()) return { span: null, startTime: Date.now() };
-
     try {
         const span = tracer.startSpan(`job.${jobName}`, {
             attributes: {
@@ -86,19 +107,20 @@ const startJobSpan = (jobName, jobData) => {
         // Track active jobs
         if (customMetrics.jobsActive) {
             customMetrics.jobsActive.add(1, { job_type: jobName });
+            console.log('📊 Job started, active jobs increased:', jobName);
         }
 
         return { span, startTime: Date.now() };
     } catch (error) {
-        console.error('Error starting job span:', error);
+        console.error('❌ Error starting job span:', error);
         return { span: null, startTime: Date.now() };
     }
 };
 
 const endJobSpan = (spanData, jobName, status, result = null) => {
-    if (!isInitializedTelemetry() || !spanData) return;
-
     try {
+        if (!spanData) return;
+
         const { span, startTime } = spanData;
         const duration = (Date.now() - startTime) / 1000;
 
@@ -108,6 +130,7 @@ const endJobSpan = (spanData, jobName, status, result = null) => {
                 job_type: jobName,
                 status: status
             });
+            console.log('📊 Job duration recorded:', { jobName, duration, status });
         }
 
         if (customMetrics.jobsTotal) {
@@ -115,10 +138,12 @@ const endJobSpan = (spanData, jobName, status, result = null) => {
                 job_type: jobName,
                 status: status
             });
+            console.log('📊 Job total incremented:', { jobName, status });
         }
 
         if (customMetrics.jobsActive) {
             customMetrics.jobsActive.add(-1, { job_type: jobName });
+            console.log('📊 Job finished, active jobs decreased:', jobName);
         }
 
         // Add span attributes
@@ -148,15 +173,15 @@ const endJobSpan = (spanData, jobName, status, result = null) => {
             span.end();
         }
     } catch (error) {
-        console.error('Error ending job span:', error);
+        console.error('❌ Error ending job span:', error);
     }
 };
 
 // API call tracking
 const trackApiCall = (apiName, duration, cost, tokens, status = 'success') => {
-    if (!isInitializedTelemetry()) return;
-
     try {
+        console.log('📊 Recording API call metric:', { apiName, duration, cost, tokens, status });
+
         if (customMetrics.apiCallDuration) {
             customMetrics.apiCallDuration.record(duration, {
                 api: apiName,
@@ -182,45 +207,47 @@ const trackApiCall = (apiName, duration, cost, tokens, status = 'success') => {
                 api: apiName
             });
         }
+
+        console.log('✅ API call metrics recorded successfully');
     } catch (error) {
-        console.error('Error tracking API call:', error);
+        console.error('❌ Error tracking API call:', error);
     }
 };
 
 // Queue monitoring
 const updateQueueDepth = (depth, queueType = 'agenda') => {
-    if (!isInitializedTelemetry()) return;
-
     try {
         if (customMetrics.queueDepth) {
-            customMetrics.queueDepth.record(depth, { queue_type: queueType });
+            customMetrics.queueDepth.add(depth, { queue_type: queueType });
+            console.log('📊 Queue depth updated:', { depth, queueType });
         }
     } catch (error) {
-        console.error('Error updating queue depth:', error);
+        console.error('❌ Error updating queue depth:', error);
     }
 };
 
 // Health check tracking
 const trackHealthCheck = (service, status) => {
-    if (!isInitializedTelemetry()) return;
-
     try {
+        console.log('📊 Recording health check:', { service, status });
+
         if (customMetrics.healthChecks) {
             customMetrics.healthChecks.add(1, {
                 service: service,
                 status: status
             });
+            console.log('✅ Health check metric recorded');
         }
     } catch (error) {
-        console.error('Error tracking health check:', error);
+        console.error('❌ Error tracking health check:', error);
     }
 };
 
 // Error tracking
 const trackError = (errorType, service, errorMessage = '') => {
-    if (!isInitializedTelemetry()) return;
-
     try {
+        console.log('📊 Recording error metric:', { errorType, service, errorMessage });
+
         if (customMetrics.errors) {
             customMetrics.errors.add(1, {
                 error_type: errorType,
@@ -243,20 +270,41 @@ const trackError = (errorType, service, errorMessage = '') => {
         });
 
         span.end();
+        console.log('✅ Error metrics recorded');
     } catch (error) {
-        console.error('Error tracking error:', error);
+        console.error('❌ Error tracking error:', error);
     }
 };
 
 // Utility function to create custom spans
 const createSpan = (name, attributes = {}) => {
-    if (!isInitializedTelemetry()) return null;
-
     try {
         return tracer.startSpan(name, { attributes });
     } catch (error) {
-        console.error('Error creating span:', error);
+        console.error('❌ Error creating span:', error);
         return null;
+    }
+};
+
+// Force record test metrics (called from app.js)
+const recordTestMetrics = () => {
+    try {
+        console.log('🧪 Recording test metrics for visibility...');
+
+        trackHealthCheck('server_startup', 'success');
+        trackApiCall('startup_test', 0.1, 0.001, 10, 'success');
+        trackError('test_error', 'system', 'This is a test error');
+        updateQueueDepth(0, 'test_queue');
+
+        // Simulate a quick job
+        const spanData = startJobSpan('test-job', { jobId: 'test-123', topic: 'test' });
+        setTimeout(() => {
+            endJobSpan(spanData, 'test-job', 'completed', { cost: 0.001, tokens: 5 });
+        }, 100);
+
+        console.log('✅ Test metrics recorded - should be visible in Prometheus');
+    } catch (error) {
+        console.error('❌ Error recording test metrics:', error);
     }
 };
 
@@ -269,6 +317,7 @@ module.exports = {
     trackHealthCheck,
     trackError,
     createSpan,
+    recordTestMetrics,
     tracer,
     meter
 };

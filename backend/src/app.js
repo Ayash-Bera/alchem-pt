@@ -287,10 +287,15 @@ async function initializeApp() {
         // Initialize custom metrics after telemetry is ready
         initializeCustomMetrics();
 
-        // Test metric recording to make them visible
         const { trackApiCall, trackHealthCheck } = require('./telemetry/metrics');
         trackHealthCheck('system_startup', 'success');
         trackApiCall('system_test', 0.1, 0, 0, 'success');
+        
+        const { recordTestMetrics } = require('./telemetry/metrics');
+        setTimeout(() => {
+            recordTestMetrics();
+        }, 3000);
+        // Test metric recording to make them visible
 
         // Always start the HTTP server first (even if services fail)
         server.listen(PORT, HOST, () => {
@@ -307,7 +312,7 @@ async function initializeApp() {
             trackApiCall('startup_test', 0.1, 0.001, 10, 'success');
             console.log('📊 Baseline metrics recorded');
         }, 2000);
-        
+
         // Initialize socket service early
         socketService.initialize(io);
         logger.info('✅ Socket service initialized');
