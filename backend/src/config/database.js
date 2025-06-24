@@ -141,20 +141,22 @@ const closeDatabase = async () => {
 // Health check function
 const checkDatabaseHealth = async () => {
     try {
-        if (!mongoose.connection.readyState) {
-            return { healthy: false, error: 'No connection', timestamp: new Date() };
-        }
-
         await mongoose.connection.db.admin().ping();
         return {
             healthy: true,
             timestamp: new Date(),
             database: mongoose.connection.name,
-            host: mongoose.connection.host
+            host: mongoose.connection.host,
+            readyState: mongoose.connection.readyState
         };
     } catch (error) {
         logger.error('MongoDB health check failed:', error);
-        return { healthy: false, error: error.message, timestamp: new Date() };
+        return {
+            healthy: false,
+            error: error.message,
+            timestamp: new Date(),
+            readyState: mongoose.connection.readyState
+        };
     }
 };
 

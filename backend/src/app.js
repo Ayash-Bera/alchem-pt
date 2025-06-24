@@ -182,6 +182,10 @@ io.on('connection', (socket) => {
         });
     });
 });
+// After socket service initialization, add:
+setInterval(() => {
+    socketService.emitLiveMetrics();
+}, 5000); // Every 5 seconds
 
 // Error handling middleware
 app.use(errorHandler);

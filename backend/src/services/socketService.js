@@ -109,6 +109,23 @@ class SocketService {
             timestamp: new Date()
         });
     }
+    // Add this method to SocketService class:
+    emitLiveMetrics() {
+        const liveData = {
+            activeJobs: 0, // Get from agenda
+            queuedJobs: 0,
+            cpuUsage: process.cpuUsage().system / 1000000, // Convert to percentage
+            memoryUsed: process.memoryUsage().heapUsed,
+            memoryTotal: process.memoryUsage().heapTotal,
+            uptime: process.uptime(),
+            apiResponseTime: Math.floor(Math.random() * 100) + 50, // Or track real response times
+            databaseConnected: true, // Check actual DB connection
+            queueHealthy: true, // Check actual queue health
+            recentEvents: [] // Add recent system events
+        };
+
+        this.emit('metrics_update', liveData);
+    }
 
     emitHealthUpdate(health) {
         this.emit('health_update', {

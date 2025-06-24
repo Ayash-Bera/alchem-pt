@@ -38,17 +38,27 @@ router.get('/detailed', async (req, res) => {
             alchemystService.testConnection()
         ]);
 
+        // In the detailed health check route, ensure this structure:
         const health = {
-            status: 'healthy',
-            timestamp: new Date(),
+            status: allHealthy ? 'healthy' : 'degraded',
+            services: {
+                database: {
+                    healthy: dbHealth.healthy,
+                    host: dbHealth.host,
+                    timestamp: dbHealth.timestamp
+                },
+                rabbitmq: {
+                    healthy: mqHealth.healthy,
+                    timestamp: mqHealth.timestamp
+                },
+                alchemyst_api: {
+                    healthy: apiHealth.healthy,
+                    timestamp: apiHealth.timestamp
+                }
+            },
             uptime: process.uptime(),
             memory: process.memoryUsage(),
-            version: '1.0.0',
-            services: {
-                database: dbHealth.status === 'fulfilled' ? dbHealth.value : { healthy: false, error: dbHealth.reason?.message },
-                rabbitmq: mqHealth.status === 'fulfilled' ? mqHealth.value : { healthy: false, error: mqHealth.reason?.message },
-                alchemyst_api: apiHealth.status === 'fulfilled' ? apiHealth.value : { healthy: false, error: apiHealth.reason?.message }
-            }
+            timestamp: new Date()
         };
 
         // Determine overall health

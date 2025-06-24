@@ -473,70 +473,64 @@ const executeResearchPlan = async (plan, job) => {
     const results = [];
     const totalSteps = plan.steps.length;
     let accumulatedContext = { topic: plan.topic, methodology: plan.methodology };
+    let totalCosts = {
+        totalTokens: 0,
+        totalCost: 0,
+        apiCalls: 0,
+        breakdown: []
+    };
 
-    logger.info(`Starting intelligent execution of ${totalSteps} steps`, {
+    logger.info(`Starting execution of ${totalSteps} steps`, {
         jobId: job.attrs._id,
-        parallelCapable: plan.parallelExecution,
-        estimatedCost: plan.costEstimate.totalEstimatedCost
+        estimatedCost: plan.costEstimate?.totalEstimatedCost || 0
     });
 
-    // Step 1: Group steps by execution strategy (parallel vs sequential)
     const executionGroups = groupStepsForExecution(plan.steps);
-
-    // Step 2: Execute groups with cost monitoring
-    let currentProgress = 15; // Starting progress
-    const progressIncrement = 55 / totalSteps; // 55% total range for execution
+    let currentProgress = 15;
+    const progressIncrement = 55 / totalSteps;
 
     for (let groupIndex = 0; groupIndex < executionGroups.length; groupIndex++) {
         const group = executionGroups[groupIndex];
-
-        logger.info(`Executing group ${groupIndex + 1}/${executionGroups.length}`, {
-            jobId: job.attrs._id,
-            groupType: group.type,
-            stepCount: group.steps.length
-        });
 
         try {
             let groupResults;
 
             if (group.type === 'parallel' && group.steps.length > 1) {
-                // Execute parallel steps concurrently
                 groupResults = await executeParallelSteps(group.steps, accumulatedContext, plan, job.attrs._id);
             } else {
-                // Execute sequential steps
                 groupResults = await executeSequentialSteps(group.steps, accumulatedContext, plan, job.attrs._id);
             }
 
-            // Step 3: Validate and integrate results
+            // Accumulate costs from group results
+            groupResults.forEach(result => {
+                totalCosts.totalTokens += result.tokens || 0;
+                totalCosts.totalCost += result.cost || 0;
+                totalCosts.apiCalls += 1;
+                totalCosts.breakdown.push({
+                    step: result.stepName,
+                    tokens: result.tokens,
+                    cost: result.cost,
+                    apiCall: result.apiCall || 'genai.chat.generate'
+                });
+            });
+
             const validatedResults = await validateAndIntegrateResults(groupResults, accumulatedContext);
             results.push(...validatedResults);
 
-            // Step 4: Update context with new findings
             accumulatedContext = await updateExecutionContext(accumulatedContext, validatedResults, plan);
 
-            // Step 5: Adaptive re-planning if needed
-            if (shouldReplanBasedOnFindings(validatedResults, plan)) {
-                const adaptedSteps = await adaptRemainingSteps(
-                    executionGroups.slice(groupIndex + 1),
-                    accumulatedContext,
-                    plan
-                );
-                executionGroups.splice(groupIndex + 1, executionGroups.length - groupIndex - 1, ...adaptedSteps);
-            }
-
-            // Update progress
             currentProgress += (group.steps.length * progressIncrement);
-            job.attrs.progress = (Math.min(currentProgress, 70));
+            job.attrs.progress = Math.min(currentProgress, 70);
 
+            // Update costs in real-time
+            await updateJobCosts(job.attrs._id, totalCosts);
 
         } catch (error) {
             logger.error(`Execution group ${groupIndex + 1} failed:`, {
                 jobId: job.attrs._id,
-                error: error.message,
-                groupType: group.type
+                error: error.message
             });
 
-            // Implement intelligent error recovery
             const recoveryResult = await handleExecutionError(error, group, accumulatedContext, plan);
             if (recoveryResult.canContinue) {
                 results.push(...recoveryResult.results);
@@ -547,18 +541,98 @@ const executeResearchPlan = async (plan, job) => {
         }
     }
 
-    // Step 6: Final cost and quality assessment
-    const executionSummary = await generateExecutionSummary(results, plan);
+    const executionSummary = await generateExecutionSummary(results, plan, totalCosts);
 
-    logger.info(`Intelligent execution completed`, {
+    logger.info(`Execution completed`, {
         jobId: job.attrs._id,
         totalSteps: results.length,
-        actualCost: executionSummary.totalCost,
-        estimatedCost: plan.costEstimate.totalEstimatedCost,
-        costEfficiency: executionSummary.costEfficiency
+        actualCost: totalCosts.totalCost,
+        totalTokens: totalCosts.totalTokens,
+        apiCalls: totalCosts.apiCalls
     });
 
     return results;
+};
+
+// Step 1: Group steps by execution strategy (parallel vs sequential)
+const executionGroups = groupStepsForExecution(plan.steps);
+
+// Step 2: Execute groups with cost monitoring
+let currentProgress = 15; // Starting progress
+const progressIncrement = 55 / totalSteps; // 55% total range for execution
+
+for (let groupIndex = 0; groupIndex < executionGroups.length; groupIndex++) {
+    const group = executionGroups[groupIndex];
+
+    logger.info(`Executing group ${groupIndex + 1}/${executionGroups.length}`, {
+        jobId: job.attrs._id,
+        groupType: group.type,
+        stepCount: group.steps.length
+    });
+
+    try {
+        let groupResults;
+
+        if (group.type === 'parallel' && group.steps.length > 1) {
+            // Execute parallel steps concurrently
+            groupResults = await executeParallelSteps(group.steps, accumulatedContext, plan, job.attrs._id);
+        } else {
+            // Execute sequential steps
+            groupResults = await executeSequentialSteps(group.steps, accumulatedContext, plan, job.attrs._id);
+        }
+
+        // Step 3: Validate and integrate results
+        const validatedResults = await validateAndIntegrateResults(groupResults, accumulatedContext);
+        results.push(...validatedResults);
+
+        // Step 4: Update context with new findings
+        accumulatedContext = await updateExecutionContext(accumulatedContext, validatedResults, plan);
+
+        // Step 5: Adaptive re-planning if needed
+        if (shouldReplanBasedOnFindings(validatedResults, plan)) {
+            const adaptedSteps = await adaptRemainingSteps(
+                executionGroups.slice(groupIndex + 1),
+                accumulatedContext,
+                plan
+            );
+            executionGroups.splice(groupIndex + 1, executionGroups.length - groupIndex - 1, ...adaptedSteps);
+        }
+
+        // Update progress
+        currentProgress += (group.steps.length * progressIncrement);
+        job.attrs.progress = (Math.min(currentProgress, 70));
+
+
+    } catch (error) {
+        logger.error(`Execution group ${groupIndex + 1} failed:`, {
+            jobId: job.attrs._id,
+            error: error.message,
+            groupType: group.type
+        });
+
+        // Implement intelligent error recovery
+        const recoveryResult = await handleExecutionError(error, group, accumulatedContext, plan);
+        if (recoveryResult.canContinue) {
+            results.push(...recoveryResult.results);
+            accumulatedContext = recoveryResult.updatedContext;
+        } else {
+            throw error;
+        }
+    }
+
+
+// Step 6: Final cost and quality assessment
+const executionSummary = await generateExecutionSummary(results, plan);
+
+logger.info(`Intelligent execution completed`, {
+    jobId: job.attrs._id,
+    totalSteps: results.length,
+    actualCost: executionSummary.totalCost,
+    estimatedCost: plan.costEstimate.totalEstimatedCost,
+    costEfficiency: executionSummary.costEfficiency
+});
+
+return results;
 };
 
 // Group steps for optimal execution strategy
@@ -597,18 +671,11 @@ const groupStepsForExecution = (steps) => {
 const executeParallelSteps = async (steps, context, plan, jobId) => {
     logger.info(`Executing ${steps.length} steps in parallel`, { jobId });
 
-    const startTime = Date.now();
-
-    // Create promises for parallel execution
     const stepPromises = steps.map(async (step) => {
         try {
-            // Build step-specific context (lighter for parallel execution)
             const stepContext = buildOptimizedStepContext(context, step, plan);
-
-            // Create cost-optimized prompt
             const stepPrompt = createCostOptimizedStepPrompt(step, stepContext);
 
-            // Execute with cost monitoring
             const stepResult = await alchemystService.generateAnalysis(stepPrompt, {
                 maxTokens: step.estimatedTokens,
                 temperature: 0.3
@@ -621,7 +688,7 @@ const executeParallelSteps = async (steps, context, plan, jobId) => {
                 content: stepResult.content,
                 tokens: stepResult.tokens,
                 cost: stepResult.cost,
-                executionTime: Date.now() - startTime,
+                apiCall: stepResult.apiCall,
                 executionType: 'parallel',
                 quality: await assessStepQuality(stepResult.content),
                 completedAt: new Date()
@@ -633,10 +700,7 @@ const executeParallelSteps = async (steps, context, plan, jobId) => {
         }
     });
 
-    // Execute all parallel steps with timeout protection
     const results = await Promise.allSettled(stepPromises);
-
-    // Process results and handle any failures
     const successfulResults = [];
     const failedResults = [];
 
@@ -651,7 +715,6 @@ const executeParallelSteps = async (steps, context, plan, jobId) => {
         }
     });
 
-    // If we have failures, attempt smart recovery
     if (failedResults.length > 0 && successfulResults.length > 0) {
         logger.warn(`${failedResults.length} parallel steps failed, attempting recovery`, { jobId });
         const recoveredResults = await recoverFailedParallelSteps(failedResults, successfulResults, context, plan);
@@ -663,6 +726,7 @@ const executeParallelSteps = async (steps, context, plan, jobId) => {
     return successfulResults;
 };
 
+
 // Execute steps sequentially with adaptive optimization
 const executeSequentialSteps = async (steps, context, plan, jobId) => {
     const results = [];
@@ -673,13 +737,8 @@ const executeSequentialSteps = async (steps, context, plan, jobId) => {
         logger.info(`Executing sequential step ${step.number}: ${step.name}`, { jobId });
 
         try {
-            // Build enhanced context from previous steps
             const stepContext = buildEnhancedStepContext(currentContext, results, step, plan);
-
-            // Create adaptive prompt based on previous findings
             const stepPrompt = createAdaptiveStepPrompt(step, stepContext, results);
-
-            // Dynamic token allocation based on context richness
             const adaptiveTokens = calculateAdaptiveTokenAllocation(step, stepContext, results);
 
             const stepResult = await alchemystService.generateAnalysis(stepPrompt, {
@@ -694,15 +753,15 @@ const executeSequentialSteps = async (steps, context, plan, jobId) => {
                 content: stepResult.content,
                 tokens: stepResult.tokens,
                 cost: stepResult.cost,
+                apiCall: stepResult.apiCall,
                 executionType: 'sequential',
                 contextRichness: calculateContextRichness(stepContext),
                 quality: await assessStepQuality(stepResult.content),
                 completedAt: new Date()
             };
 
-            // Validate step quality and retry if needed
             if (processedResult.quality.score < 0.6) {
-                logger.warn(`Step ${step.number} quality below threshold, retrying with enhanced prompt`, { jobId });
+                logger.warn(`Step ${step.number} quality below threshold, retrying`, { jobId });
                 const retryResult = await retryStepWithEnhancement(step, stepContext, stepResult);
                 if (retryResult) {
                     processedResult.content = retryResult.content;
@@ -714,14 +773,10 @@ const executeSequentialSteps = async (steps, context, plan, jobId) => {
             }
 
             results.push(processedResult);
-
-            // Update context for next step
             currentContext = await updateStepContext(currentContext, processedResult, plan);
 
         } catch (error) {
             logger.error(`Sequential step ${step.number} failed:`, error);
-
-            // Attempt graceful degradation
             const fallbackResult = await generateFallbackStepResult(step, currentContext, error);
             if (fallbackResult) {
                 results.push(fallbackResult);
@@ -734,7 +789,6 @@ const executeSequentialSteps = async (steps, context, plan, jobId) => {
 
     return results;
 };
-
 // Validate and integrate results for quality assurance
 const validateAndIntegrateResults = async (results, context) => {
     const validatedResults = [];
@@ -922,7 +976,7 @@ const calculateAdaptiveTokenAllocation = (step, context, previousResults) => {
 };
 
 // Generate execution summary for cost tracking
-const generateExecutionSummary = async (results, plan) => {
+const generateExecutionSummary = async (results, plan, totalCosts) => {
     const totalCost = results.reduce((sum, r) => sum + (r.cost || 0), 0);
     const totalTokens = results.reduce((sum, r) => sum + (r.tokens || 0), 0);
     const avgQuality = results.reduce((sum, r) => sum + (r.quality?.score || 0), 0) / results.length;
@@ -1959,59 +2013,80 @@ const extractTacticalRecommendations = (content) => {
 
 const calculateTotalCosts = (researchResults, synthesis, deliverables) => {
     const researchCost = researchResults.reduce((sum, r) => sum + (r.cost || 0), 0);
+    const researchTokens = researchResults.reduce((sum, r) => sum + (r.tokens || 0), 0);
+    const researchCalls = researchResults.length;
+
     const synthesisCost = synthesis.cost || 0;
+    const synthesisTokens = synthesis.tokens || 0;
 
     let deliverablesCost = 0;
+    let deliverablesTokens = 0;
+    let deliverablesCalls = 0;
+
     Object.values(deliverables).forEach(deliverable => {
         if (deliverable && deliverable.cost) {
             deliverablesCost += deliverable.cost;
+            deliverablesTokens += deliverable.tokens || 0;
+            deliverablesCalls += 1;
         }
     });
 
     return {
-        research: researchCost,
-        synthesis: synthesisCost,
-        deliverables: deliverablesCost,
-        total: researchCost + synthesisCost + deliverablesCost
+        totalCost: researchCost + synthesisCost + deliverablesCost,
+        totalTokens: researchTokens + synthesisTokens + deliverablesTokens,
+        apiCalls: researchCalls + 1 + deliverablesCalls, // +1 for synthesis
+        breakdown: {
+            research: { cost: researchCost, tokens: researchTokens, calls: researchCalls },
+            synthesis: { cost: synthesisCost, tokens: synthesisTokens, calls: 1 },
+            deliverables: { cost: deliverablesCost, tokens: deliverablesTokens, calls: deliverablesCalls }
+        }
     };
 };
 
 const updateJobCosts = async (jobId, costs, errorMessage = null) => {
     try {
+        const { getDatabase } = require('../config/database');
         const db = getDatabase();
-        const jobMetrics = db.collection('job_metrics');
 
         if (costs) {
-            const totalTokens = costs.research + costs.synthesis + costs.deliverables;
-            await jobMetrics.updateOne(
-                { job_id: jobId },
+            await db.collection('job_metrics').updateOne(
+                { job_id: jobId.toString() },
                 {
                     $set: {
-                        cost_usd: costs.total,
-                        tokens_used: totalTokens,
+                        cost_usd: costs.totalCost,
+                        tokens_used: costs.totalTokens,
+                        api_calls: costs.apiCalls,
+                        cost_breakdown: costs.breakdown,
                         updated_at: new Date()
-                    },
-                    $inc: {
-                        api_calls: 5
                     }
-                }
+                },
+                { upsert: true }
             );
+
+            logger.info('Job costs updated:', {
+                jobId: jobId.toString(),
+                totalCost: costs.totalCost,
+                totalTokens: costs.totalTokens,
+                apiCalls: costs.apiCalls
+            });
         }
 
         if (errorMessage) {
-            await jobMetrics.updateOne(
-                { job_id: jobId },
+            await db.collection('job_metrics').updateOne(
+                { job_id: jobId.toString() },
                 {
                     $set: {
                         error_message: errorMessage,
                         updated_at: new Date()
                     }
-                }
+                },
+                { upsert: true }
             );
         }
     } catch (error) {
         logger.error('Error updating job costs:', error);
     }
 };
+
 
 module.exports = deepResearchJob;

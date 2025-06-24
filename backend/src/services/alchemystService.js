@@ -16,7 +16,7 @@ class AlchemystService {
 
     async generateAnalysis(prompt, options = {}, retryCount = 0) {
         const MAX_RETRIES = 3;
-        const RETRY_DELAY = 5000; // 5 seconds
+        const RETRY_DELAY = 5000;
 
         try {
             const requestData = {
@@ -40,11 +40,10 @@ class AlchemystService {
                     'Authorization': `Bearer ${this.apiKey}`,
                     'Content-Type': 'application/json'
                 },
-                timeout: 180000, // Reduced to 3 minutes
+                timeout: 180000,
                 responseType: 'stream'
             });
 
-            // Handle Server-Sent Events (SSE) stream response
             let finalContent = '';
             let metadata = {};
             let thinkingSteps = [];
@@ -61,11 +60,7 @@ class AlchemystService {
                     for (const line of lines) {
                         if (line.startsWith('data: ')) {
                             const data = line.slice(6);
-
-                            if (data === '[DONE]') {
-                                logger.info('Stream completed');
-                                continue;
-                            }
+                            if (data === '[DONE]') continue;
 
                             try {
                                 const parsed = JSON.parse(data);
@@ -92,12 +87,17 @@ class AlchemystService {
                         return;
                     }
 
+                    const estimatedTokens = this.estimateTokens(finalContent);
+                    const actualTokens = metadata.tokens || estimatedTokens;
+
                     const result = {
                         content: finalContent,
-                        tokens: metadata.tokens || this.estimateTokens(finalContent),
-                        cost: this.calculateCost({ total_tokens: metadata.tokens || this.estimateTokens(finalContent) }),
+                        tokens: actualTokens,
+                        cost: this.calculateAlchemystCost(actualTokens),
                         metadata: metadata,
-                        thinkingSteps: thinkingSteps
+                        thinkingSteps: thinkingSteps,
+                        apiCall: 'genai.chat.generate',
+                        timestamp: new Date()
                     };
 
                     resolve(result);
@@ -107,28 +107,22 @@ class AlchemystService {
                     if (resolved) return;
                     resolved = true;
 
-                    logger.error('Stream error:', error.message);
-
-                    // Check if we should retry
                     if ((error.code === 'ECONNRESET' || error.message.includes('aborted')) && retryCount < MAX_RETRIES) {
-                        logger.info(`Connection reset, retrying in ${RETRY_DELAY}ms (attempt ${retryCount + 1})`);
                         setTimeout(() => {
                             this.generateAnalysis(prompt, options, retryCount + 1)
                                 .then(resolve)
                                 .catch(reject);
-                        }, RETRY_DELAY * (retryCount + 1)); // Exponential backoff
+                        }, RETRY_DELAY * (retryCount + 1));
                     } else {
                         reject(error);
                     }
                 });
 
-                // Shorter timeout for individual requests
                 setTimeout(() => {
                     if (resolved) return;
                     resolved = true;
 
                     if (retryCount < MAX_RETRIES) {
-                        logger.warn(`Request timeout, retrying (attempt ${retryCount + 1})`);
                         setTimeout(() => {
                             this.generateAnalysis(prompt, options, retryCount + 1)
                                 .then(resolve)
@@ -137,12 +131,11 @@ class AlchemystService {
                     } else {
                         reject(new Error('Request timeout after all retries'));
                     }
-                }, 180000); // 3 minutes
+                }, 180000);
             });
 
         } catch (error) {
             if (retryCount < MAX_RETRIES && (error.code === 'ECONNRESET' || error.message.includes('timeout'))) {
-                logger.info(`Request failed, retrying in ${RETRY_DELAY}ms (attempt ${retryCount + 1})`);
                 await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * (retryCount + 1)));
                 return this.generateAnalysis(prompt, options, retryCount + 1);
             }
@@ -151,6 +144,32 @@ class AlchemystService {
             throw error;
         }
     }
+
+    calculateAlchemystCost(tokens, apiCall = 'genai.chat.generate') {
+        // Alchemyst token costs per call type
+        const TOKEN_COSTS = {
+            'genai.chat.generate': 1,
+            'genai.chat.web_search': 4,
+            'genai.email.generate': 3,
+            'genai.social.generate': 3,
+            'genai.workflow.step.generate': 7,
+            'genai.leads.get': 3,
+            'genai.leads.augment.by_url': 2,
+            'genai.leads.augment.by_web_search': 4,
+            'genai.email.send': 1,
+            'campaigns.create': 1
+        };
+
+        const baseTokenCost = TOKEN_COSTS[apiCall] || 1;
+        // Assume $0.001 per Alchemyst token (adjust based on actual pricing)
+        return baseTokenCost * 0.001;
+    }
+
+    calculateCost(usage) {
+        // Keep for backward compatibility
+        return this.calculateAlchemystCost(usage.total_tokens || 0);
+    }
+    
     // Helper method to estimate tokens when not provided
     estimateTokens(text) {
         // Rough estimation: ~4 characters per token
@@ -346,18 +365,33 @@ Current Step: ${step.name}
         return prompt;
     }
 
-    calculateCost(usage) {
-        if (!usage) return 0;
+calculateCost(usage, apiCall = 'genai.chat.generate') {
+    // Alchemyst API token costs per call
+    const ALCHEMYST_TOKEN_COSTS = {
+        'genai.chat.generate': 1,
+        'genai.chat.web_search': 4,
+        'genai.email.generate': 3,
+        'genai.social.generate': 3,
+        'genai.workflow.step.generate': 7,
+        'genai.leads.get': 3,
+        'genai.leads.augment.by_url': 2,
+        'genai.leads.augment.by_web_search': 4,
+        'genai.email.send': 1,
+        'campaigns.create': 1
+    };
 
-        // Pricing estimates (adjust based on actual Alchemyst pricing)
-        const INPUT_COST_PER_TOKEN = 0.00003; // $0.03 per 1K tokens
-        const OUTPUT_COST_PER_TOKEN = 0.00006; // $0.06 per 1K tokens
-
-        const inputCost = (usage.prompt_tokens || 0) * INPUT_COST_PER_TOKEN;
-        const outputCost = (usage.completion_tokens || 0) * OUTPUT_COST_PER_TOKEN;
-
-        return Math.round((inputCost + outputCost) * 10000) / 10000; // Round to 4 decimal places
-    }
+    const tokensPerCall = ALCHEMYST_TOKEN_COSTS[apiCall] || 1;
+    
+    // If you have actual token usage from response, use that
+    // Otherwise estimate based on content length
+    const actualTokens = usage.total_tokens || this.estimateTokens(usage.content || '');
+    
+    return {
+        tokens: actualTokens,
+        cost: tokensPerCall * 0.001, // Assuming $0.001 per token - adjust based on your pricing
+        apiCall: apiCall
+    };
+}
 
     async checkAPIHealth() {
         try {

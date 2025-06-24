@@ -19,6 +19,11 @@ import {
     Wifi,
     WifiOff
 } from 'lucide-react';
+import JobResultsModal from '../components/Dashboard/JobResultsModal';
+
+// Add state for modal
+const [selectedJob, setSelectedJob] = useState(null);
+const [showJobModal, setShowJobModal] = useState(false);
 
 // Helper functions outside component
 const loadJobsHelper = async (setJobs) => {
@@ -77,10 +82,35 @@ const loadSystemHealthHelper = async (setSystemHealth) => {
     try {
         const response = await healthAPI.getDetailedHealth();
         if (response.data) {
-            setSystemHealth(response.data);
+            // Ensure the data structure matches what components expect
+            const healthData = {
+                ...response.data,
+                services: {
+                    database: {
+                        healthy: response.data.services?.database?.healthy || false,
+                        host: response.data.services?.database?.host || 'N/A'
+                    },
+                    rabbitmq: {
+                        healthy: response.data.services?.rabbitmq?.healthy || false
+                    },
+                    alchemyst_api: {
+                        healthy: response.data.services?.alchemyst_api?.healthy || false
+                    }
+                }
+            };
+            setSystemHealth(healthData);
         }
     } catch (error) {
         console.error('Error loading system health:', error);
+        // Set fallback data instead of empty object
+        setSystemHealth({
+            status: 'unhealthy',
+            services: {
+                database: { healthy: false, host: 'N/A' },
+                rabbitmq: { healthy: false },
+                alchemyst_api: { healthy: false }
+            }
+        });
     }
 };
 
@@ -175,7 +205,8 @@ const Dashboard = () => {
     }, [jobs]);
 
     const handleViewJob = (job) => {
-        console.log('View job:', job);
+        setSelectedJob(job);
+        setShowJobModal(true);
     };
 
     const handleRetryJob = async (job) => {
@@ -491,6 +522,14 @@ const Dashboard = () => {
                     </div>
                 </div>
             </div>
+            <JobResultsModal
+                job={selectedJob}
+                isOpen={showJobModal}
+                onClose={() => {
+                    setShowJobModal(false);
+                    setSelectedJob(null);
+                }}
+            />
         </div>
     );
 };
