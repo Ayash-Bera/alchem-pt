@@ -147,11 +147,9 @@ const startJobSpan = (jobName, jobData) => {
         return { span: null, startTime: Date.now() };
     }
 };
-
 const endJobSpan = (spanData, jobName, status, result = null) => {
     try {
         if (!spanData) return;
-
         const { span, startTime } = spanData;
         const duration = (Date.now() - startTime) / 1000;
 
@@ -161,50 +159,49 @@ const endJobSpan = (spanData, jobName, status, result = null) => {
                 job_type: jobName,
                 status: status
             });
-
-            if (customMetrics.jobsTotal) {
-                customMetrics.jobsTotal.add(1, {
-                    job_type: jobName,
-                    status: status
-                });
-            }
-
-            if (customMetrics.jobsActive) {
-                customMetrics.jobsActive.add(-1, { job_type: jobName });
-                console.log('📊 Job finished, active jobs decreased:', jobName);
-            }
-
-            // Add span attributes
-            if (span) {
-                span.setAttributes({
-                    'job.status': status,
-                    'job.duration_seconds': duration
-                });
-
-                if (result && result.cost) {
-                    span.setAttribute('job.cost_usd', result.cost);
-                }
-
-                if (result && result.tokens) {
-                    span.setAttribute('job.tokens_used', result.tokens);
-                }
-
-                if (status === 'completed') {
-                    span.setStatus({ code: 1 });
-                } else if (status === 'failed') {
-                    span.setStatus({
-                        code: 2,
-                        message: result?.error || 'Job failed'
-                    });
-                }
-
-                span.end();
-            }
-        } catch (error) {
-            console.error('❌ Error ending job span:', error);
         }
-    };
 
+        if (customMetrics.jobsTotal) {
+            customMetrics.jobsTotal.add(1, {
+                job_type: jobName,
+                status: status
+            });
+        }
+
+        if (customMetrics.jobsActive) {
+            customMetrics.jobsActive.add(-1, { job_type: jobName });
+        }
+
+        // Add span attributes
+        if (span) {
+            span.setAttributes({
+                'job.status': status,
+                'job.duration_seconds': duration
+            });
+
+            if (result && result.cost) {
+                span.setAttribute('job.cost_usd', result.cost);
+            }
+
+            if (result && result.tokens) {
+                span.setAttribute('job.tokens_used', result.tokens);
+            }
+
+            if (status === 'completed') {
+                span.setStatus({ code: 1 });
+            } else if (status === 'failed') {
+                span.setStatus({
+                    code: 2,
+                    message: result?.error || 'Job failed'
+                });
+            }
+
+            span.end();
+        }
+    } catch (error) {
+        console.error('❌ Error ending job span:', error);
+    }
+};
     // API call tracking
     const trackApiCall = (apiName, duration, cost, tokens, status = 'success') => {
         try {
