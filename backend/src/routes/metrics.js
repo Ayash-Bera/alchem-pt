@@ -3,6 +3,7 @@ const express = require('express');
 const { getDatabase } = require('../config/database');
 const logger = require('../utils/logger');
 const { trackHealthCheck } = require('../telemetry/metrics');
+const promClient = require('prom-client');
 
 const router = express.Router();
 
@@ -498,6 +499,16 @@ router.get('/jobs/:jobId', async (req, res) => {
         res.status(500).json({
             error: error.message
         });
+    }
+});
+
+router.get('/prometheus', async (req, res) => {
+    try {
+        res.set('Content-Type', promClient.register.contentType);
+        const metrics = await promClient.register.metrics();
+        res.end(metrics);
+    } catch (error) {
+        res.status(500).end(error);
     }
 });
 

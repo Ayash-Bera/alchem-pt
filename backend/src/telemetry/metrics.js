@@ -5,10 +5,37 @@ const { isInitializedTelemetry } = require('./telemetry');
 // Get meter for custom metrics
 const meter = metrics.getMeter('alchemyst-platform', '1.0.0');
 const tracer = trace.getTracer('alchemyst-platform', '1.0.0');
+const promClient = require('prom-client');
 
 // Custom metrics
 let customMetrics = {};
 let metricsInitialized = false;
+
+const promMetrics = {
+    jobDuration: new promClient.Histogram({
+        name: 'alchemyst_job_duration_seconds',
+        help: 'Duration of job processing in seconds',
+        labelNames: ['job_type', 'status']
+    }),
+
+    jobsTotal: new promClient.Counter({
+        name: 'alchemyst_jobs_total',
+        help: 'Total number of jobs processed',
+        labelNames: ['job_type', 'status']
+    }),
+
+    apiCallDuration: new promClient.Histogram({
+        name: 'alchemyst_api_call_duration_seconds',
+        help: 'Duration of API calls in seconds',
+        labelNames: ['api', 'status']
+    }),
+
+    errors: new promClient.Counter({
+        name: 'alchemyst_errors_total',
+        help: 'Total number of errors',
+        labelNames: ['error_type', 'service']
+    })
+};
 
 const initializeCustomMetrics = () => {
     try {
@@ -206,6 +233,18 @@ const trackApiCall = (apiName, duration, cost, tokens, status = 'success') => {
             customMetrics.tokensUsed.add(tokens, {
                 api: apiName
             });
+        }
+        if (cost && promMetrics.apiCallCost) {
+            promMetrics.apiCallCost.observe({ api: apiName }, cost);
+        }
+        // Add after existing OpenTelemetry code:
+        if (promMetrics.apiCallDuration) {
+            promMetrics.apiCallDuration.observe({ api: apiName, status }, duration);
+        }
+
+        // Add after existing OpenTelemetry code:
+        if (promMetrics.errors) {
+            promMetrics.errors.inc({ error_type: errorType, service });
         }
 
         console.log('✅ API call metrics recorded successfully');

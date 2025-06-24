@@ -4,7 +4,7 @@ const { getNodeAutoInstrumentations } = require('@opentelemetry/auto-instrumenta
 const { Resource } = require('@opentelemetry/resources');
 const { SemanticResourceAttributes } = require('@opentelemetry/semantic-conventions');
 const { OTLPTraceExporter } = require('@opentelemetry/exporter-trace-otlp-http');
-const { PrometheusExporter } = require('@opentelemetry/exporter-prometheus');
+
 
 let sdk = null;
 let isInitialized = false;
@@ -36,16 +36,12 @@ const initializeTelemetry = () => {
             });
 
         // Configure Prometheus metrics exporter
-        const prometheusExporter = new PrometheusExporter({
-            port: parseInt(process.env.PROMETHEUS_PORT) || 9464,
-            endpoint: '/metrics',
-        });
+
 
         // Initialize SDK with auto-instrumentations
         sdk = new NodeSDK({
             resource,
             traceExporter,
-            metricReader: prometheusExporter,
             instrumentations: [
                 getNodeAutoInstrumentations({
                     // Disable problematic instrumentations that might conflict
