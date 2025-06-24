@@ -17,6 +17,20 @@ const initializeAgenda = async () => {
             defaultLockLifetime: parseInt(process.env.AGENDA_DEFAULT_LOCK_LIFETIME) || 600000
         });
 
+        // Move all agenda.on() event listeners here AFTER agenda is created
+        agenda.on('start', (job) => {
+            // Create initial job metric record
+            const { insertJobMetric } = require('./database');
+            insertJobMetric({
+                job_id: job.attrs._id.toString(),
+                job_type: job.attrs.name,
+                status: 'running',
+                started_at: new Date(),
+                cost_usd: 0,
+                tokens_used: 0,
+                api_calls: 0
+            });
+        });
         // Set up comprehensive event logging
         setupEventListeners();
 
@@ -37,20 +51,6 @@ const initializeAgenda = async () => {
         throw error;
     }
 };
-
-agenda.on('start', (job) => {
-    // Create initial job metric record
-    const { insertJobMetric } = require('./database');
-    insertJobMetric({
-        job_id: job.attrs._id.toString(),
-        job_type: job.attrs.name,
-        status: 'running',
-        started_at: new Date(),
-        cost_usd: 0,
-        tokens_used: 0,
-        api_calls: 0
-    });
-});
 
 // Helper function to categorize jobs
 const getJobCategory = (jobName) => {
