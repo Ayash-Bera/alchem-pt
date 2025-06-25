@@ -84,7 +84,7 @@ const ResearchForm = ({ onSubmit, isRunning, onCancel, currentJobId }) => {
                     <label className="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-wide">
                         Depth
                     </label>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div className="grid grid-cols-3 gap-2">
                         {depthOptions.map((option) => (
                             <label
                                 key={option.value}
