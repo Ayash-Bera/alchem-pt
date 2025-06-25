@@ -77,7 +77,7 @@ const LiveMetrics = ({ isConnected = false, liveData = {} }) => {
         return 'text-red-400';
     };
 
-    const getMiniChart = (data, color = 'blue') => {
+    const getMiniChart = (data, color = 'white') => {
         if (data.length === 0) return null;
 
         const max = Math.max(...data, 1);
@@ -199,7 +199,7 @@ const LiveMetrics = ({ isConnected = false, liveData = {} }) => {
                         </div>
                         {cpuHistory.length > 0 && (
                             <div className="h-8">
-                                {getMiniChart(cpuHistory, 'orange')}
+                                {getMiniChart(cpuHistory, 'white')}
                             </div>
                         )}
                     </div>
@@ -230,7 +230,7 @@ const LiveMetrics = ({ isConnected = false, liveData = {} }) => {
                         </div>
                         {memoryHistory.length > 0 && (
                             <div className="h-8">
-                                {getMiniChart(memoryHistory, 'purple')}
+                                {getMiniChart(memoryHistory, 'white')}
                             </div>
                         )}
                     </div>
