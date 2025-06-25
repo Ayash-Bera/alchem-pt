@@ -8,12 +8,12 @@ class SocketService {
     }
 
     connect() {
+        console.log('🔌 Attempting to connect to:', SOCKET_URL);
         this.socket = io(SOCKET_URL, {
-            transports: ['websocket', 'polling'],
-            upgrade: true,
-            rememberUpgrade: true,
-            timeout: 20000,
-            forceNew: true
+            transports: ['polling', 'websocket'],
+            forceNew: true,
+            reconnection: true,
+            timeout: 20000
         });
 
         this.socket.on('connect', () => {

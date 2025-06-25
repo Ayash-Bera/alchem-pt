@@ -52,9 +52,15 @@ const corsOptions = {
 };
 
 const io = new Server(server, {
-    cors: corsOptions,
-    transports: ['websocket', 'polling'], // Add polling as fallback
-    allowEIO3: true
+    cors: {
+        origin: "*",
+        methods: ["GET", "POST"],
+        credentials: true
+    },
+    transports: ['polling', 'websocket'],
+    allowEIO3: true,
+    pingTimeout: 60000,
+    pingInterval: 25000
 });
 
 
