@@ -355,7 +355,7 @@ const Dashboard = () => {
                         </p>
 
                         {/* Minimal System Status */}
-                        <div className="grid grid-cols-4 gap-4 max-w-3xl mx-auto mb-8">
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 max-w-3xl mx-auto mb-8">
                             <div className="minimal-card p-4 rounded-2xl text-center">
                                 <CheckCircle className={`w-6 h-6 mx-auto mb-2 ${systemHealth.status === 'healthy' ? 'text-green-400' : 'text-red-400'}`} />
                                 <div className="text-lg font-bold text-white">{systemHealth.status === 'healthy' ? 'Healthy' : 'Issues'}</div>
@@ -401,7 +401,7 @@ const Dashboard = () => {
                     </div>
 
                     {/* Main Dashboard Grid */}
-                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-8">
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-8">
                         <div className="lg:col-span-8">
                             <div className="relative group">
                                 <div className="absolute -inset-1 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 rounded-3xl blur opacity-20 group-hover:opacity-30 transition duration-1000"></div>
@@ -505,7 +505,7 @@ const Dashboard = () => {
             </div>
 
             {/* Connection Status */}
-            <div className="fixed bottom-8 right-8 z-50">
+            <div className="fixed bottom-8 right-8 z-50 hidden sm:block">
                 <div className={`flex items-center space-x-4 px-6 py-4 rounded-2xl glass shadow-2xl border transition-all duration-300 ${isConnected
                     ? 'border-green-500/30 shadow-green-500/10'
                     : 'border-red-500/30 shadow-red-500/10'
@@ -529,7 +529,7 @@ const Dashboard = () => {
             </div>
 
             {/* Performance tip */}
-            <div className="fixed bottom-8 left-8 z-50">
+            <div className="fixed bottom-8 left-8 z-50 hidden lg:block">
                 <div className="glass px-4 py-3 rounded-2xl shadow-xl border border-white/10 max-w-xs">
                     <div className="flex items-start space-x-3">
                         <div className="w-8 h-8 bg-gradient-to-r from-green-500 to-blue-600 rounded-lg flex items-center justify-center flex-shrink-0">
