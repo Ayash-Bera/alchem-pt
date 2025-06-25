@@ -147,12 +147,15 @@ class JobService {
                 return null;
             }
 
-            // Get additional metrics from MongoDB
-            const metrics = await this.getJobMetrics(jobId);
+            // Get additional metrics AND result from MongoDB
+            const { getDatabase } = require('../config/database');
+            const db = getDatabase();
+            const metrics = await db.collection('job_metrics').findOne({ job_id: jobId });
 
             return {
                 ...this.formatJobResponse(job),
-                metrics
+                metrics,
+                result: metrics?.result || job.attrs.result // Fallback to job result if not in metrics
             };
         } catch (error) {
             logger.error(`Error getting job ${jobId}:`, error);

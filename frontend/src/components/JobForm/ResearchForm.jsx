@@ -171,7 +171,26 @@ const ResearchForm = ({ onSubmit, isRunning, onCancel, currentJobId }) => {
                         <button
                             type="submit"
                             disabled={!formData.topic.trim()}
-                            className="w-full flex items-center justify-center space-x-2 px-4 py-3 rounded-2xl font-medium shadow-lg disabled:cursor-not-allowed transition-all duration-300 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white border border-white/20 backdrop-blur-sm"
+                            className="w-full flex items-center justify-center space-x-2 px-4 py-3 rounded-2xl font-medium shadow-lg transition-all duration-300 text-white border border-white/20 backdrop-blur-sm"
+                            style={{
+                                background: !formData.topic.trim()
+                                    ? 'linear-gradient(to right, #6b7280, #9ca3af)'
+                                    : 'linear-gradient(to right, #3b82f6, #8b5cf6)',
+                                opacity: !formData.topic.trim() ? 0.6 : 1,
+                                cursor: !formData.topic.trim() ? 'not-allowed' : 'pointer'
+                            }}
+                            onMouseEnter={(e) => {
+                                if (formData.topic.trim()) {
+                                    e.target.style.background = 'linear-gradient(to right, #2563eb, #7c3aed)';
+                                    e.target.style.transform = 'translateY(-1px)';
+                                }
+                            }}
+                            onMouseLeave={(e) => {
+                                if (formData.topic.trim()) {
+                                    e.target.style.background = 'linear-gradient(to right, #3b82f6, #8b5cf6)';
+                                    e.target.style.transform = 'translateY(0px)';
+                                }
+                            }}
                         >
                             <Play size={18} />
                             <span>Start Research</span>
@@ -180,7 +199,19 @@ const ResearchForm = ({ onSubmit, isRunning, onCancel, currentJobId }) => {
                         <button
                             type="button"
                             onClick={() => onCancel(currentJobId)}
-                            className="w-full flex items-center justify-center space-x-2 px-4 py-3 rounded-2xl font-medium shadow-lg transition-all duration-300 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white border border-white/20 backdrop-blur-sm"
+                            className="w-full flex items-center justify-center space-x-2 px-4 py-3 rounded-2xl font-medium shadow-lg transition-all duration-300 text-white border border-white/20 backdrop-blur-sm"
+                            style={{
+                                background: 'linear-gradient(to right, #ef4444, #dc2626)',
+                                cursor: 'pointer'
+                            }}
+                            onMouseEnter={(e) => {
+                                e.target.style.background = 'linear-gradient(to right, #dc2626, #b91c1c)';
+                                e.target.style.transform = 'translateY(-1px)';
+                            }}
+                            onMouseLeave={(e) => {
+                                e.target.style.background = 'linear-gradient(to right, #ef4444, #dc2626)';
+                                e.target.style.transform = 'translateY(0px)';
+                            }}
                         >
                             <Square size={18} />
                             <span>Stop Research</span>

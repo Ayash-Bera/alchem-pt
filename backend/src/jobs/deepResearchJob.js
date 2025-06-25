@@ -10,6 +10,26 @@ const deepResearchJob = async (job) => {
     logger.info(`Starting deep research job for topic: ${topic}`, { jobId, researchDepth });
 
     // Start telemetry tracking
+    const updateJobProgress = async (jobId, progress, status = 'running') => {
+        try {
+            // Update progress in database directly
+            const { updateJobMetric } = require('../config/database');
+            await updateJobMetric(jobId.toString(), {
+                progress: progress,
+                status: status,
+                updated_at: new Date()
+            });
+
+            // Emit socket event for real-time updates
+            const socketService = require('../services/socketService');
+            socketService.emitJobProgress(jobId.toString(), progress, status);
+
+            logger.info(`Job progress updated: ${jobId} - ${progress}%`);
+        } catch (error) {
+            logger.error(`Error updating job progress for ${jobId}:`, error);
+        }
+    };
+
     const spanData = startJobSpan('deep-research', {
         jobId: String(jobId),
         topic,
@@ -18,7 +38,7 @@ const deepResearchJob = async (job) => {
     });
 
     try {
-        job.attrs.progress = 5;
+        await updateJobProgress(jobId, 5, 'running');
 
         // Step 1: Create intelligent research plan
         logger.info('Creating research plan...', { jobId });
@@ -35,7 +55,7 @@ const deepResearchJob = async (job) => {
             planSpan.end();
         }
 
-        job.attrs.progress = 25;
+        await updateJobProgress(jobId, 25, 'running');
 
         // Step 2: Execute with our new intelligent system
         logger.info('Executing research plan...', { jobId });
@@ -55,7 +75,7 @@ const deepResearchJob = async (job) => {
             executionSpan.end();
         }
 
-        job.attrs.progress = 70;
+        await updateJobProgress(jobId, 70, 'running');
 
         // Continue with synthesis...
         logger.info('Synthesizing findings...', { jobId });
@@ -71,7 +91,7 @@ const deepResearchJob = async (job) => {
             synthesisSpan.end();
         }
 
-        job.attrs.progress = 85;
+        await updateJobProgress(jobId, 85, 'running');
 
         logger.info('Generating final deliverables...', { jobId });
         const deliverablesSpan = createSpan('research.generate_deliverables', {
@@ -88,7 +108,7 @@ const deepResearchJob = async (job) => {
             deliverablesSpan.end();
         }
 
-        job.attrs.progress = 95;
+        await updateJobProgress(jobId, 95, 'running');
 
         const result = {
             topic,
@@ -105,7 +125,7 @@ const deepResearchJob = async (job) => {
             }
         };
 
-        job.attrs.progress = 100;
+        await updateJobProgress(jobId, 100, 'completed');
 
         const totalCosts = calculateTotalCosts(researchResults, synthesis, finalReport);
         await updateJobCosts(jobId, totalCosts);
@@ -627,7 +647,7 @@ const executeResearchPlan = async (plan, job) => {
                 accumulatedContext = await updateExecutionContext(accumulatedContext, validatedResults, plan);
 
                 currentProgress += (group.steps.length * progressIncrement);
-                job.attrs.progress = Math.min(currentProgress, 70);
+                await updateJobProgress(jobId, Math.min(currentProgress, 70), 'running');
 
                 // Update costs in real-time
                 await updateJobCosts(job.attrs._id, totalCosts);

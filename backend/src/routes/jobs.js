@@ -239,26 +239,33 @@ router.get('/stats/overview', async (req, res) => {
 });
 
 // Get job progress/status for real-time updates
+// Get job progress/status for real-time updates
 router.get('/:id/progress', async (req, res) => {
     try {
         const { id } = req.params;
-        const job = await jobService.getJob(id);
 
+        // Get job from agenda
+        const job = await jobService.getJob(id);
         if (!job) {
             return res.status(404).json({
                 error: 'Job not found'
             });
         }
 
+        // Get progress from metrics collection
+        const { getDatabase } = require('../config/database');
+        const db = getDatabase();
+        const metrics = await db.collection('job_metrics').findOne({ job_id: id });
+
         const progressData = {
             jobId: id,
-            status: job.status,
-            progress: job.progress || 0,
+            status: metrics?.status || job.status,
+            progress: metrics?.progress || 0,
             lastRunAt: job.lastRunAt,
             lastFinishedAt: job.lastFinishedAt,
             failedAt: job.failedAt,
             estimatedCompletion: calculateEstimatedCompletion(job),
-            metrics: job.metrics
+            metrics: metrics
         };
 
         res.json({

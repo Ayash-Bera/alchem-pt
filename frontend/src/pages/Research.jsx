@@ -83,6 +83,34 @@ const Research = () => {
         setLogs(prev => [...prev, log].slice(-10));
     };
 
+    // Add this useEffect after the socket setup
+    useEffect(() => {
+        if (!currentJob || currentJob.status === 'completed' || currentJob.status === 'failed') {
+            return;
+        }
+
+        const pollProgress = async () => {
+            try {
+                const response = await jobsAPI.getJobProgress(currentJob.id);
+                if (response.data.success) {
+                    const progressData = response.data.progress;
+                    setCurrentJob(prev => ({
+                        ...prev,
+                        progress: progressData.progress,
+                        status: progressData.status
+                    }));
+                }
+            } catch (error) {
+                console.error('Error polling job progress:', error);
+            }
+        };
+
+        // Poll every 2 seconds for progress updates
+        const progressInterval = setInterval(pollProgress, 2000);
+
+        return () => clearInterval(progressInterval);
+    }, [currentJob?.id, currentJob?.status]);
+
     const handleSubmitJob = async (jobData) => {
         try {
             addLog('Creating research job...', 'info');

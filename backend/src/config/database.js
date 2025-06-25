@@ -189,6 +189,7 @@ const insertJobMetric = async (jobData) => {
         throw error;
     }
 };
+
 const updateJobMetric = async (jobId, updates) => {
     try {
         const db = getDatabase();
@@ -199,7 +200,8 @@ const updateJobMetric = async (jobId, updates) => {
                     ...updates,
                     updated_at: new Date()
                 }
-            }
+            },
+            { upsert: true } // Create if doesn't exist
         );
         return result;
     } catch (error) {
