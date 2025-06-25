@@ -342,7 +342,7 @@ const Dashboard = () => {
                             </div>
                         </div>
 
-                        <h1 className="text-6xl font-black mb-6 leading-tight">
+                        <h1 className="text-4xl md:text-6xl font-black mb-6 leading-tight">
                             <span className="bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
                                 Analytics
                             </span>
@@ -401,7 +401,7 @@ const Dashboard = () => {
                     </div>
 
                     {/* Main Dashboard Grid */}
-                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-8">
                         <div className="lg:col-span-8">
                             <div className="relative group">
                                 <div className="absolute -inset-1 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 rounded-3xl blur opacity-20 group-hover:opacity-30 transition duration-1000"></div>
