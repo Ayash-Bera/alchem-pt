@@ -52,7 +52,9 @@ const corsOptions = {
 };
 
 const io = new Server(server, {
-    cors: corsOptions
+    cors: corsOptions,
+    transports: ['websocket', 'polling'], // Add polling as fallback
+    allowEIO3: true
 });
 
 
@@ -200,9 +202,7 @@ io.on('connection', (socket) => {
 });
 
 // After socket service initialization, add:
-setInterval(() => {
-    socketService.emitLiveMetrics();
-}, 5000); // Every 5 seconds
+//add here
 
 // Error handling middleware
 app.use(errorHandler);
@@ -359,6 +359,16 @@ async function initializeApp() {
                 memory: process.memoryUsage()
             });
         }, 30000); // Every 30 seconds
+
+        // At the very end of initializeApp(), before the closing brace:
+        setTimeout(() => {
+            if (socketService.io) {
+                setInterval(() => {
+                    socketService.emitLiveMetrics();
+                }, 5000);
+                logger.info('✅ Live metrics interval started');
+            }
+        }, 2000);
 
         logger.info('🎉 Alchemyst Platform initialization completed!');
 

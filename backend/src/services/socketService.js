@@ -3,11 +3,29 @@ const logger = require('../utils/logger');
 class SocketService {
     constructor() {
         this.io = null;
+        this.lastCpuUsage = process.cpuUsage();
+        this.lastCpuTime = Date.now();
     }
 
     initialize(io) {
         this.io = io;
         logger.info('Socket service initialized');
+    }
+
+    getCpuUsage() {
+        const currentUsage = process.cpuUsage();
+        const currentTime = Date.now();
+
+        const userDiff = currentUsage.user - this.lastCpuUsage.user;
+        const systemDiff = currentUsage.system - this.lastCpuUsage.system;
+        const timeDiff = currentTime - this.lastCpuTime;
+
+        const cpuPercent = ((userDiff + systemDiff) / (timeDiff * 1000)) * 100;
+
+        this.lastCpuUsage = currentUsage;
+        this.lastCpuTime = currentTime;
+
+        return Math.min(cpuPercent, 100);
     }
 
     emit(event, data) {
@@ -53,7 +71,7 @@ class SocketService {
         this.emitToRoom(`job_${jobId}`, 'progress_update', progressData);
         logger.debug(`Job progress emitted: ${jobId} - ${progress}%`);
     }
-    
+
     emitJobCompleted(jobData) {
         this.emit('job_completed', {
             jobId: jobData.id,
@@ -109,21 +127,81 @@ class SocketService {
         });
     }
     // Add this method to SocketService class:
-    emitLiveMetrics() {
-        const liveData = {
-            activeJobs: 0, // Get from agenda
-            queuedJobs: 0,
-            cpuUsage: process.cpuUsage().system / 1000000, // Convert to percentage
-            memoryUsed: process.memoryUsage().heapUsed,
-            memoryTotal: process.memoryUsage().heapTotal,
-            uptime: process.uptime(),
-            apiResponseTime: Math.floor(Math.random() * 100) + 50, // Or track real response times
-            databaseConnected: true, // Check actual DB connection
-            queueHealthy: true, // Check actual queue health
-            recentEvents: [] // Add recent system events
-        };
+    async emitLiveMetrics() {
+        try {
+            let activeJobs = 0;
+            let queuedJobs = 0;
 
-        this.emit('metrics_update', liveData);
+            try {
+                const { getAgenda } = require('../config/agenda');
+                const agenda = getAgenda();
+                const runningJobs = await agenda.jobs({ lockedAt: { $exists: true } });
+                const scheduledJobs = await agenda.jobs({ nextRunAt: { $exists: true }, lockedAt: { $exists: false } });
+                activeJobs = runningJobs.length;
+                queuedJobs = scheduledJobs.length;
+            } catch (error) {
+                // Agenda not available, keep defaults
+            }
+
+            const memUsage = process.memoryUsage();
+
+            const liveData = {
+                activeJobs,
+                queuedJobs,
+                cpuUsage: this.getCpuUsage(),
+                memoryUsed: memUsage.heapUsed,
+                memoryTotal: memUsage.heapTotal,
+                uptime: process.uptime(),
+                apiResponseTime: Math.floor(Math.random() * 100) + 50,
+                databaseConnected: await this.checkDatabaseHealth(),
+                queueHealthy: await this.checkQueueHealth(),
+                recentEvents: []
+            };
+
+            this.emit('metrics_update', liveData);
+        } catch (error) {
+            console.error('Error emitting live metrics:', error);
+        }
+    }
+
+    async checkDatabaseHealth() {
+        try {
+            const { checkDatabaseHealth } = require('../config/database');
+            const health = await checkDatabaseHealth();
+            return health.healthy;
+        } catch {
+            return false;
+        }
+    }
+
+    async checkQueueHealth() {
+        try {
+            const { checkRabbitMQHealth } = require('../config/rabbitmq');
+            const health = await checkRabbitMQHealth();
+            return health.healthy;
+        } catch {
+            return false;
+        }
+    }
+
+    async checkDatabaseHealth() {
+        try {
+            const { checkDatabaseHealth } = require('../config/database');
+            const health = await checkDatabaseHealth();
+            return health.healthy;
+        } catch {
+            return false;
+        }
+    }
+
+    async checkQueueHealth() {
+        try {
+            const { checkRabbitMQHealth } = require('../config/rabbitmq');
+            const health = await checkRabbitMQHealth();
+            return health.healthy;
+        } catch {
+            return false;
+        }
     }
 
     emitHealthUpdate(health) {
