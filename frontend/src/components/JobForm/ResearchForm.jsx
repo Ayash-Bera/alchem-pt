@@ -50,7 +50,7 @@ const ResearchForm = ({ onSubmit, isRunning, onCancel, currentJobId }) => {
     ];
 
     return (
-        <div className="minimal-card p-6 rounded-2xl">
+        <div className="minimal-card p-4 sm:p-6 rounded-2xl">
             {/* Compact Header */}
             <div className="flex items-center space-x-3 mb-6">
                 <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center">
@@ -79,7 +79,7 @@ const ResearchForm = ({ onSubmit, isRunning, onCancel, currentJobId }) => {
                     />
                 </div>
 
-                {/* Research Depth - Compact */}
+                {/* Research Depth - Responsive */}
                 <div>
                     <label className="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-wide">
                         Depth
@@ -109,17 +109,17 @@ const ResearchForm = ({ onSubmit, isRunning, onCancel, currentJobId }) => {
                     </div>
                 </div>
 
-                {/* Deliverables - Compact Grid */}
+                {/* Deliverables - Responsive Grid */}
                 <div>
                     <label className="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-wide">
                         Deliverables
                     </label>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {deliverableOptions.map((option) => (
                             <div
                                 key={option.id}
                                 onClick={() => !isRunning && handleDeliverablesChange(option.id)}
-                                className={`flex items-center space-x-2 p-2 rounded-lg transition-all cursor-pointer minimal-card ${formData.deliverables.includes(option.id)
+                                className={`flex items-center space-x-2 p-3 rounded-lg transition-all cursor-pointer minimal-card ${formData.deliverables.includes(option.id)
                                     ? 'border-green-400/50 bg-green-500/10'
                                     : 'hover:bg-white/5'
                                     }`}
@@ -165,7 +165,7 @@ const ResearchForm = ({ onSubmit, isRunning, onCancel, currentJobId }) => {
                     </div>
                 </div>
 
-                {/* Submit Button - Compact */}
+                {/* Submit Button - Responsive */}
                 <div className="pt-6">
                     {!isRunning ? (
                         <button
@@ -223,4 +223,4 @@ const ResearchForm = ({ onSubmit, isRunning, onCancel, currentJobId }) => {
     );
 };
 
-export default ResearchForm; 
+export default ResearchForm;

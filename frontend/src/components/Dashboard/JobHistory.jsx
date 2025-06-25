@@ -177,7 +177,7 @@ const JobHistory = ({ jobs = [], onViewJob, onRetryJob, onDeleteJob }) => {
                 </div>
 
                 {/* Filter controls */}
-                <div className="flex flex-col sm:flex-row items-start sm:items-end space-y-4 sm:space-y-0">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <div>
                         <label className="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-wide">Status</label>
                         <select
@@ -241,7 +241,7 @@ const JobHistory = ({ jobs = [], onViewJob, onRetryJob, onDeleteJob }) => {
             </div>
 
             {/* Jobs List */}
-            <div className="flex flex-col lg:flex-row items-start space-y-4 lg:space-y-0 lg:space-x-4 flex-1">
+            <div className="space-y-4 max-h-96 overflow-y-auto relative z-10">
                 {filteredJobs.length > 0 ? (
                     filteredJobs.map((job) => {
                         const statusConfig = getStatusConfig(job.status);
@@ -356,8 +356,8 @@ const JobHistory = ({ jobs = [], onViewJob, onRetryJob, onDeleteJob }) => {
                                         </div>
                                     </div>
 
-                                    {/* Progress bar for running jobs
-                                    {job.status === 'running' && (
+                                    {/* Progress bar for running jobs */}
+                                    {/* {job.status === 'running' && (
                                         <div className="mt-4">
                                             <div className="flex justify-between text-xs mb-2">
                                                 <span className="text-gray-400">Progress</span>
