@@ -30,7 +30,7 @@ const socketService = require('./services/socketService');
 
 // Configuration
 const PORT = process.env.PORT || 8080;
-const HOST = '0.0.0.0'; // Critical: bind to all interfaces
+const HOST = '0.0.0.0';  
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://35.209.5.151:3000";
 
 const app = express();
@@ -59,8 +59,9 @@ const io = new Server(server, {
 
 
 // Basic middleware
+//app.set('trust proxy', true);
 app.use(cors(corsOptions));
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // Add security headers
@@ -72,16 +73,20 @@ app.use((req, res, next) => {
 });
 
 // Rate limiting with more lenient settings for development
-const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 20000, // Increased limit for testing
-    message: {
-        error: 'Too many requests from this IP, please try again later.'
-    },
-    standardHeaders: true,
-    legacyHeaders: false,
-});
-app.use('/api', limiter);
+// const limiter = rateLimit({
+   // windowMs: 15 * 60 * 1000,
+   // max: 20000,
+  //  message: {
+ //       error: 'Too many requests from this IP, please try again later.'
+  //  },
+//    standardHeaders: true,
+//    legacyHeaders: false,
+    //validate: {
+      //  trustProxy: false,
+    //    xForwardedForHeader: false
+  //  }
+//});
+app.use('/api', (req, res, next) => next());
 
 // Enhanced request logging middleware
 app.use((req, res, next) => {
