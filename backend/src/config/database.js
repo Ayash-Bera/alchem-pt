@@ -203,6 +203,10 @@ const updateJobMetric = async (jobId, updates) => {
             },
             { upsert: true } // Create if doesn't exist
         );
+
+        // Also log the update for debugging
+        logger.debug(`Job metric updated: ${jobId}`, updates);
+
         return result;
     } catch (error) {
         logger.error('Error updating job metric:', error);

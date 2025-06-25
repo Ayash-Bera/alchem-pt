@@ -174,20 +174,20 @@ const ResearchForm = ({ onSubmit, isRunning, onCancel, currentJobId }) => {
                             className="w-full flex items-center justify-center space-x-2 px-4 py-3 rounded-2xl font-medium shadow-lg transition-all duration-300 text-white border border-white/20 backdrop-blur-sm"
                             style={{
                                 background: !formData.topic.trim()
-                                    ? 'linear-gradient(to right, #6b7280, #9ca3af)'
-                                    : 'linear-gradient(to right, #3b82f6, #8b5cf6)',
+                                    ? 'linear-gradient(to right, #64748b, #475569)'
+                                    : 'linear-gradient(to right, #4f46e5, #6366f1)',
                                 opacity: !formData.topic.trim() ? 0.6 : 1,
                                 cursor: !formData.topic.trim() ? 'not-allowed' : 'pointer'
                             }}
                             onMouseEnter={(e) => {
                                 if (formData.topic.trim()) {
-                                    e.target.style.background = 'linear-gradient(to right, #2563eb, #7c3aed)';
+                                    e.target.style.background = 'linear-gradient(to right, #3730a3, #4338ca)';
                                     e.target.style.transform = 'translateY(-1px)';
                                 }
                             }}
                             onMouseLeave={(e) => {
                                 if (formData.topic.trim()) {
-                                    e.target.style.background = 'linear-gradient(to right, #3b82f6, #8b5cf6)';
+                                    e.target.style.background = 'linear-gradient(to right, #4f46e5, #6366f1)';
                                     e.target.style.transform = 'translateY(0px)';
                                 }
                             }}
@@ -201,15 +201,15 @@ const ResearchForm = ({ onSubmit, isRunning, onCancel, currentJobId }) => {
                             onClick={() => onCancel(currentJobId)}
                             className="w-full flex items-center justify-center space-x-2 px-4 py-3 rounded-2xl font-medium shadow-lg transition-all duration-300 text-white border border-white/20 backdrop-blur-sm"
                             style={{
-                                background: 'linear-gradient(to right, #ef4444, #dc2626)',
+                                background: 'linear-gradient(to right, #dc2626, #991b1b)',
                                 cursor: 'pointer'
                             }}
                             onMouseEnter={(e) => {
-                                e.target.style.background = 'linear-gradient(to right, #dc2626, #b91c1c)';
+                                e.target.style.background = 'linear-gradient(to right, #b91c1c, #7f1d1d)';
                                 e.target.style.transform = 'translateY(-1px)';
                             }}
                             onMouseLeave={(e) => {
-                                e.target.style.background = 'linear-gradient(to right, #ef4444, #dc2626)';
+                                e.target.style.background = 'linear-gradient(to right, #dc2626, #991b1b)';
                                 e.target.style.transform = 'translateY(0px)';
                             }}
                         >

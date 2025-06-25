@@ -40,21 +40,20 @@ class SocketService {
     }
 
     emitJobProgress(jobId, progress, status) {
-        this.emit('job_progress', {
+        const progressData = {
             jobId,
             progress,
             status,
             timestamp: new Date()
-        });
+        };
 
-        // Also emit to specific job room
-        this.emitToRoom(`job_${jobId}`, 'progress_update', {
-            progress,
-            status,
-            timestamp: new Date()
-        });
+        // Emit to all connected clients
+        this.emit('job_progress', progressData);
+        // Also emit to specific job room if anyone is subscribed
+        this.emitToRoom(`job_${jobId}`, 'progress_update', progressData);
+        logger.debug(`Job progress emitted: ${jobId} - ${progress}%`);
     }
-
+    
     emitJobCompleted(jobData) {
         this.emit('job_completed', {
             jobId: jobData.id,

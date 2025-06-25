@@ -166,6 +166,19 @@ const Dashboard = () => {
             loadJobsHelper(setJobs);
         });
 
+        socket.on('job_progress', (data) => {
+            if (data.jobId) {
+                setJobs(prevJobs =>
+                    prevJobs.map(job =>
+                        job.id === data.jobId
+                            ? { ...job, progress: data.progress, status: data.status }
+                            : job
+                    )
+                );
+            }
+            setLiveData(prev => ({ ...prev, ...data }));
+        });
+
         socket.on('job_completed', () => {
             loadJobsHelper(setJobs);
             loadMetricsHelper(jobs, setMetrics);
@@ -194,6 +207,17 @@ const Dashboard = () => {
             socketService.disconnect();
         };
     }, []);
+
+    // Auto-refresh jobs every 5 seconds to catch any missed socket updates
+    useEffect(() => {
+        if (jobs.some(job => job.status === 'running')) {
+            const refreshInterval = setInterval(() => {
+                loadJobsHelper(setJobs);
+            }, 5000);
+
+            return () => clearInterval(refreshInterval);
+        }
+    }, [jobs]);
 
     // Load metrics after jobs are loaded
     useEffect(() => {
