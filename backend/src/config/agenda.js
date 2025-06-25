@@ -1,5 +1,6 @@
 const Agenda = require('agenda');
 const logger = require('../utils/logger');
+const { ObjectId } = require('mongodb');
 
 let agenda = null;
 
@@ -249,7 +250,18 @@ const createJob = async (jobType, jobData, options = {}) => {
 
 const cancelJob = async (jobId) => {
     try {
-        const numRemoved = await agenda.cancel({ _id: jobId });
+        const { ObjectId } = require('mongodb');
+
+        // Convert string ID to ObjectId for MongoDB query
+        let query;
+        try {
+            query = { _id: new ObjectId(jobId) };
+        } catch (objectIdError) {
+            // If ObjectId conversion fails, try as string
+            query = { _id: jobId };
+        }
+
+        const numRemoved = await agenda.cancel(query);
         if (numRemoved > 0) {
             await updateJobMetrics(jobId, 'cancelled', { completed_at: new Date() });
         }

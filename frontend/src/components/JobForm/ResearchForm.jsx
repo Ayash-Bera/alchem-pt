@@ -89,8 +89,8 @@ const ResearchForm = ({ onSubmit, isRunning, onCancel, currentJobId }) => {
                             <label
                                 key={option.value}
                                 className={`relative p-3 rounded-lg border transition-all cursor-pointer text-center ${formData.researchDepth === option.value
-                                        ? 'border-blue-400 bg-blue-500/20'
-                                        : 'border-white/10 bg-white/5 hover:border-white/20'
+                                    ? 'border-blue-400 bg-blue-500/20'
+                                    : 'border-white/10 bg-white/5 hover:border-white/20'
                                     }`}
                             >
                                 <input
@@ -120,13 +120,13 @@ const ResearchForm = ({ onSubmit, isRunning, onCancel, currentJobId }) => {
                                 key={option.id}
                                 onClick={() => !isRunning && handleDeliverablesChange(option.id)}
                                 className={`flex items-center space-x-2 p-2 rounded-lg transition-all cursor-pointer minimal-card ${formData.deliverables.includes(option.id)
-                                        ? 'border-green-400/50 bg-green-500/10'
-                                        : 'hover:bg-white/5'
+                                    ? 'border-green-400/50 bg-green-500/10'
+                                    : 'hover:bg-white/5'
                                     }`}
                             >
                                 <div className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-all ${formData.deliverables.includes(option.id)
-                                        ? 'border-green-400 bg-green-400'
-                                        : 'border-white/30'
+                                    ? 'border-green-400 bg-green-400'
+                                    : 'border-white/30'
                                     }`}>
                                     {formData.deliverables.includes(option.id) && (
                                         <svg className="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20">
@@ -171,7 +171,7 @@ const ResearchForm = ({ onSubmit, isRunning, onCancel, currentJobId }) => {
                         <button
                             type="submit"
                             disabled={!formData.topic.trim()}
-                            className="w-full flex items-center justify-center space-x-2 px-4 py-3 rounded-2xl font-medium shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white border border-white/20 backdrop-blur-sm"
+                            className="w-full flex items-center justify-center space-x-2 px-4 py-3 rounded-2xl font-medium shadow-lg disabled:cursor-not-allowed transition-all duration-300 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white border border-white/20 backdrop-blur-sm"
                         >
                             <Play size={18} />
                             <span>Start Research</span>

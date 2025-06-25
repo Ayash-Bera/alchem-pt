@@ -191,9 +191,14 @@ router.get('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
     try {
         const { id } = req.params;
+
+        // Add logging to debug
+        logger.info(`Attempting to cancel job: ${id}`);
+
         const success = await jobService.cancelJob(id);
 
         if (!success) {
+            logger.warn(`Job cancellation failed for ID: ${id}`);
             return res.status(404).json({
                 error: 'Job not found or cannot be cancelled'
             });
