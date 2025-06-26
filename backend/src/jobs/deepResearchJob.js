@@ -343,7 +343,7 @@ const calculateOptimalTokenDistribution = (depth, complexity) => {
         general: 1.0
     };
 
-    const totalBudget = baseTokens[depth] * complexityMultiplier[complexity.level];
+    const totalBudget = baseTokens[depth] * domainMultiplier * complexityMultiplier[complexity.level];
 
     return {
         planning: Math.floor(totalBudget * 0.1),
