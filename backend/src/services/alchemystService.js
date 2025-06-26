@@ -239,6 +239,7 @@ class AlchemystService {
             'genai.email.send': 1,
             'campaigns.create': 1
         };
+        //cost thingy 
 
         const baseTokenCost = TOKEN_COSTS[apiCall] || 1;
         // Assume $0.001 per Alchemyst token (adjust based on actual pricing)

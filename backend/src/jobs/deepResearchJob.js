@@ -335,6 +335,14 @@ const calculateOptimalTokenDistribution = (depth, complexity) => {
         high: 1.3
     };
 
+    const domainMultiplier = {
+        technology: 1.2,      // More tokens for implementation details
+        business: 1.0,        // Standard allocation
+        science: 1.3,         // More tokens for literature review
+        health: 1.4,          // Most tokens for validation and safety
+        general: 1.0
+    };
+
     const totalBudget = baseTokens[depth] * complexityMultiplier[complexity.level];
 
     return {

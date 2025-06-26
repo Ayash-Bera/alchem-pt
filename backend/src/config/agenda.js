@@ -153,7 +153,7 @@ const defineJobProcessors = async () => {
             done(error);
         }
     });
-
+// deep research concurrency and shi 
     agenda.define('deep-research', {
         concurrency: 1,
         lockLifetime: parseInt(process.env.JOB_LOCK_LIFETIME) || 3600000
