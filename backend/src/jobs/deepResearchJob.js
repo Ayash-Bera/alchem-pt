@@ -507,10 +507,10 @@ const calculateStepTokenAllocation = (tokenBudget, depth, stepNumber) => {
     const baseAllocation = tokenBudget.execution / (depth === 'shallow' ? 4 : depth === 'medium' ? 6 : 8);
 
     // Give more tokens to critical steps (1, middle, last)
-    const multiplier = stepNumber === 1 ? 1.2 :
-        stepNumber === Math.floor((depth === 'shallow' ? 4 : depth === 'medium' ? 6 : 8) / 2) ? 1.1 :
-            stepNumber === (depth === 'shallow' ? 4 : depth === 'medium' ? 6 : 8) ? 1.1 :
-                0.9;
+    const multiplier = stepNumber === 1 ? 1.2 : //first 
+        stepNumber === Math.floor((depth === 'shallow' ? 4 : depth === 'medium' ? 6 : 8) / 2) ? 1.1 : // middle one is usually the syn
+            stepNumber === (depth === 'shallow' ? 4 : depth === 'medium' ? 6 : 8) ? 1.1 :// last step 
+                0.9; //else 
 
     return Math.floor(baseAllocation * multiplier);
 };
