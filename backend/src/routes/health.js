@@ -35,7 +35,7 @@ router.get('/detailed', async (req, res) => {
         const [dbHealth, mqHealth, apiHealth] = await Promise.allSettled([
             checkDatabaseHealth(),
             checkRabbitMQHealth(),
-            alchemystService.testConnection()
+            // alchemystService.testConnection()
         ]);
 
         // Build health object first
@@ -50,10 +50,10 @@ router.get('/detailed', async (req, res) => {
                     healthy: mqHealth.status === 'fulfilled' ? mqHealth.value.healthy : false,
                     timestamp: mqHealth.status === 'fulfilled' ? mqHealth.value.timestamp : new Date()
                 },
-                alchemyst_api: {
-                    healthy: apiHealth.status === 'fulfilled' ? apiHealth.value.success : false,
-                    timestamp: new Date()
-                }
+                // alchemyst_api: {
+                //     healthy: apiHealth.status === 'fulfilled' ? apiHealth.value.success : false,
+                //     timestamp: new Date()
+                // }
             },
             uptime: process.uptime(),
             memory: process.memoryUsage(),
@@ -109,25 +109,25 @@ router.get('/ready', async (req, res) => {
 });
 
 // Test Alchemyst API connection
-router.get('/alchemyst-test', async (req, res) => {
-    try {
-        const alchemystService = require('../services/alchemystService');
-        const result = await alchemystService.testConnection();
+// router.get('/alchemyst-test', async (req, res) => {
+//     try {
+//         const alchemystService = require('../services/alchemystService');
+//         const result = await alchemystService.testConnection();
 
-        res.json({
-            success: result.success,
-            message: result.success ? 'Alchemyst API connected successfully' : 'Alchemyst API connection failed',
-            details: result,
-            timestamp: new Date()
-        });
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            error: error.message,
-            timestamp: new Date()
-        });
-    }
-});
+//         res.json({
+//             success: result.success,
+//             message: result.success ? 'Alchemyst API connected successfully' : 'Alchemyst API connection failed',
+//             details: result,
+//             timestamp: new Date()
+//         });
+//     } catch (error) {
+//         res.status(500).json({
+//             success: false,
+//             error: error.message,
+//             timestamp: new Date()
+//         });
+//     }
+// });
 // Liveness probe
 router.get('/live', (req, res) => {
     res.json({

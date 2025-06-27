@@ -24,6 +24,8 @@ const deepResearchJob = async (job) => {
             const socketService = require('../services/socketService');
             socketService.emitJobProgress(jobId.toString(), progress, status);
 
+
+
             logger.info(`Job progress updated: ${jobId} - ${progress}%`);
         } catch (error) {
             logger.error(`Error updating job progress for ${jobId}:`, error);
@@ -36,7 +38,7 @@ const deepResearchJob = async (job) => {
         researchDepth,
         requestId
     });
-
+ frontend 
     try {
         await updateJobProgress(jobId, 5, 'running');
 
