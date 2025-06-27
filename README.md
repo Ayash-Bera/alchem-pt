@@ -14,37 +14,22 @@
 ## 🏗️ Architecture
 
 ```mermaid
-graph TB
-    subgraph "🎯 User Interface"
-        UI[React Dashboard<br/>34.68.86.10:3000]
-    end
+graph TD
+    UI[React Dashboard] --> API[Express API]
+    API --> JOBS[AgendaJS Jobs]
+    API --> QUEUE[RabbitMQ]
+    JOBS --> AI[Alchemyst AI]
+    JOBS --> DB[(MongoDB)]
+    API --> METRICS[Grafana]
+    QUEUE --> JOBS
     
-    subgraph "⚡ Processing Engine"
-        API[Express API<br/>34.68.86.10:8080]
-        JOBS[AgendaJS<br/>Job Processor]
-        QUEUE[RabbitMQ<br/>Message Queue]
-    end
-    
-    subgraph "🧠 AI Services"
-        ALCHEMYST[Alchemyst AI<br/>Research Agent]
-    end
-    
-    subgraph "💾 Data & Monitoring"
-        DB[(MongoDB<br/>Job Storage)]
-        METRICS[Grafana<br/>35.209.99.170:3000]
-    end
-    
-    UI <==> API
-    API --> JOBS
-    JOBS <--> QUEUE
-    JOBS <--> ALCHEMYST
-    JOBS --> DB
-    API --> METRICS
-    
-    style UI fill:#e1f5fe
-    style ALCHEMYST fill:#f3e5f5
-    style DB fill:#e8f5e8
-    style METRICS fill:#fff3e0
+    style UI fill:#61dafb,stroke:#000,color:#000
+    style API fill:#68a063,stroke:#000,color:#fff
+    style JOBS fill:#ff6b6b,stroke:#000,color:#fff
+    style AI fill:#9c27b0,stroke:#000,color:#fff
+    style DB fill:#4caf50,stroke:#000,color:#fff
+    style METRICS fill:#ff9800,stroke:#000,color:#fff
+    style QUEUE fill:#607d8b,stroke:#000,color:#fff
 ```
 
 ## ✨ What It Does
@@ -82,19 +67,21 @@ curl -X POST http://34.68.86.10:8080/api/jobs \
 ## 🛠️ Tech Stack
 
 ```mermaid
-graph LR
-    A[React] --> B[Express.js]
-    B --> C[AgendaJS]
-    B --> D[RabbitMQ]
-    C --> E[MongoDB]
-    B --> F[OpenTelemetry]
-    F --> G[Grafana]
-    C --> H[Alchemyst AI]
+flowchart LR
+    React --> Express
+    Express --> AgendaJS
+    Express --> RabbitMQ
+    AgendaJS --> MongoDB
+    Express --> Grafana
+    AgendaJS --> Alchemyst
     
-    style A fill:#61dafb,color:#000
-    style B fill:#68a063,color:#fff
-    style C fill:#ff6b6b,color:#fff
-    style H fill:#9c27b0,color:#fff
+    style React fill:#61dafb,color:#000
+    style Express fill:#68a063,color:#fff
+    style AgendaJS fill:#ff6b6b,color:#fff
+    style RabbitMQ fill:#ff6600,color:#fff
+    style MongoDB fill:#4caf50,color:#fff
+    style Grafana fill:#ff9800,color:#fff
+    style Alchemyst fill:#9c27b0,color:#fff
 ```
 
 ---
