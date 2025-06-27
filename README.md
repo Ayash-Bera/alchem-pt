@@ -6,7 +6,7 @@
 
 | Service | URL | Description |
 |---------|-----|-------------|
-| 🎨 **Frontend** | http://34.68.86.10:3000 | Research Dashboard & Job Submission |
+| 🎨 **Frontend** | https://34.68.86.10.nip.io/dashboard | Research Dashboard & Job Submission |
 | 🚀 **API** | http://34.68.86.10:8080 | REST API & WebSocket Server |
 | 📊 **Grafana** | http://35.209.99.170:3000 | Metrics & Monitoring Dashboard |
 | 🐰 **RabbitMQ** | http://35.209.28.176:15672 | Queue Management UI |
